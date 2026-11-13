@@ -511,3 +511,23 @@ Details are in `docs/test-runs/2026-11-13-1417-opus55-run1.md`. Summary:
 
 ### Results
 `node --check` OK. purchase-checks **26/26**, tools-checks **20/20**, auth-checks **33/33**.
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 2, then a local patch to the extension
+
+### Run 2
+Details are in `docs/test-runs/2026-11-13-1428-opus55-run2.md`.
+- `open_checkout` took the tab to Stripe with no human help, and the agent switched to Stripe's tools: `get_order_summary`, `select_payment_method` and `submit_payment`.
+- `fill_payment_form` never reached the agent. The user saw it in DevTools, but not in the side panel.
+- **The user confirmed the extension showed an "Allow" permission prompt before `submit_payment`** (Q4, extension side).
+- The agent asked before submitting. After the user's explicit "Submit the checkout form…", it submitted. With empty card fields, and after the session had expired, nothing was paid.
+
+### Diagnosis
+- First hypothesis (a stale list): **ruled out by the code.** `useAgentSession.ts` calls `waitForToolsToSettle(… requestTools: () => requestTabTools(turnTabId))` after every tool round, a full re-list with fresh frame origins.
+- Actual cause: the only tool source is the top frame's `getTools({ fromOrigins })`, which needs the subframe to have exposed the tool to the top origin, and the side panel drops subframe reports.
+
+### Patch (D20)
+- 2 files, +94/−2. The diff is saved as `docs/extension-patch.diff`.
+- `npm run typecheck` passed. `npm run test:unit`: **209/209 passed**. `npm run build` OK, reusing the existing auth token, so no server restart was needed.
+- The clone's push URL is still disabled. Nothing is sent upstream.

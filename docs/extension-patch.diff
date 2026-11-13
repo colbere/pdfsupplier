@@ -1,0 +1,149 @@
+diff --git a/extension/content.ts b/extension/content.ts
+index 5e230f3..bd528be 100644
+--- a/extension/content.ts
++++ b/extension/content.ts
+@@ -207,3 +207,45 @@ addToolEventListener('toolcancel', ({ toolName }) => {
+ if (window === window.top) {
+   chrome.runtime.sendMessage({ type: 'contentScriptReady' }).catch(() => {});
+ }
++
++// ---------------------------------------------------------------------------
++// LOCAL PATCH (PDF Supplier experiment, 2026-11-13). Not part of upstream.
++//
++// Problem: the side panel only learns about tools through the TOP frame's
++// getTools({ fromOrigins }), which returns a subframe's tools only if that
++// subframe exposed them to the top origin. Stripe Checkout registers
++// `fill_payment_form` in an iframe after a payment method is selected, and it
++// never reaches the agent (see the PDF Supplier docs, agent run 2).
++//
++// Patch: a subframe on an allow-listed origin also reports the tools it
++// registered itself, now and whenever they change. The side panel accepts
++// these reports only when Chrome's own record of the frame URL and the tab URL
++// are both on an allow-listed origin (see useActiveTabTools.ts).
++const PATCH_SUBFRAME_TOOL_ORIGINS = /^https:\/\/([a-z0-9-]+\.)*stripe\.com$/;
++
++if (window !== window.top && PATCH_SUBFRAME_TOOL_ORIGINS.test(window.location.origin) && document.modelContext) {
++  const modelContext = document.modelContext;
++  let reportTimeout: ReturnType<typeof setTimeout> | undefined;
++  const reportOwnTools = () => {
++    clearTimeout(reportTimeout);
++    reportTimeout = setTimeout(async () => {
++      try {
++        const own = (await modelContext.getTools()).filter((tool) => tool.window === window);
++        const subframeTools = own.map((tool) => ({
++          description: tool.description,
++          inputSchema: tool.inputSchema,
++          readOnlyHint: tool.annotations?.readOnlyHint,
++          untrustedContentHint: tool.annotations?.untrustedContentHint,
++          consequentialHint: tool.annotations?.consequentialHint,
++          name: tool.name,
++        }));
++        console.debug(`[WebMCP patch] Subframe ${window.location.origin} reports ${subframeTools.length} own tools`);
++        chrome.runtime.sendMessage({ subframeTools }).catch(() => {});
++      } catch (error) {
++        console.debug('[WebMCP patch] Subframe tool report failed:', toMessage(error));
++      }
++    }, 150);
++  };
++  (modelContext as unknown as EventTarget).addEventListener('toolchange', reportOwnTools);
++  reportOwnTools();
++}
+diff --git a/extension/sidepanel/hooks/useActiveTabTools.ts b/extension/sidepanel/hooks/useActiveTabTools.ts
+index c2b8221..e8655b1 100644
+--- a/extension/sidepanel/hooks/useActiveTabTools.ts
++++ b/extension/sidepanel/hooks/useActiveTabTools.ts
+@@ -34,8 +34,14 @@ interface ToolsReport {
+   url?: string;
+   type?: string;
+   action?: string;
++  /** LOCAL PATCH: a subframe's own tools (see content.ts). */
++  subframeTools?: WebMCPTool[];
+ }
+ 
++// LOCAL PATCH (PDF Supplier experiment, 2026-11-13): origins whose subframes may
++// report their own tools. Both the frame and the tab must be on one of these.
++const PATCH_SUBFRAME_TOOL_ORIGINS = /^https:\/\/([a-z0-9-]+\.)*stripe\.com$/;
++
+ /**
+  * Keeps each tab's WebMCP tools, domain, origin and favicon up to date, and
+  * returns those of the tab in front.
+@@ -56,6 +62,26 @@ export function useActiveTabTools(activeTabId: number | null): UseActiveTabTools
+     activeTabIdRef.current = activeTabId;
+   }, [activeTabId]);
+ 
++  // LOCAL PATCH: the top frame's latest list, and each allow-listed subframe's
++  // own tools, per tab. The tools a turn sees are the two merged.
++  const topToolsRef = useRef<Map<number, WebMCPTool[]>>(new Map());
++  const subframeToolsRef = useRef<Map<number, Map<number, WebMCPTool[]>>>(new Map());
++  const mergedTools = (tabId: number): WebMCPTool[] => {
++    const top = topToolsRef.current.get(tabId) ?? [];
++    const seen = new Set(top.map((t) => `${t.frameId ?? 0}:${t.name}`));
++    const extra: WebMCPTool[] = [];
++    for (const list of subframeToolsRef.current.get(tabId)?.values() ?? []) {
++      for (const t of list) {
++        const key = `${t.frameId ?? 0}:${t.name}`;
++        if (!seen.has(key)) {
++          seen.add(key);
++          extra.push(t);
++        }
++      }
++    }
++    return [...top, ...extra];
++  };
++
+   const tabSeqRef = useRef<Map<number, number>>(new Map());
+   const bumpTabSeq = (tabId: number): number => {
+     const next = (tabSeqRef.current.get(tabId) ?? 0) + 1;
+@@ -88,9 +114,30 @@ export function useActiveTabTools(activeTabId: number | null): UseActiveTabTools
+     const chromeApi = getChrome();
+     if (!chromeApi?.runtime) return;
+ 
+-    const listener = ({ message, tools, url, type, action }: ToolsReport, sender?: chrome.runtime.MessageSender) => {
++    const listener = ({ message, tools, url, type, action, subframeTools }: ToolsReport, sender?: chrome.runtime.MessageSender) => {
+       // Internal signals (e.g. contentScriptReady) are handled elsewhere.
+       if (type || action) return;
++
++      // LOCAL PATCH: a subframe reporting its own tools. Origins come from
++      // Chrome's sender record (not the message), and the frame id is the one
++      // Chrome assigned, so a frame can only report tools as itself.
++      if (subframeTools !== undefined) {
++        const subTabId = sender?.tab?.id;
++        const subFrameId = sender?.frameId;
++        if (subTabId == null || !subFrameId) return;
++        const frameOrigin = originOfUrl(sender?.url || '');
++        const tabOrigin = originOfUrl(sender?.tab?.url || '');
++        if (!PATCH_SUBFRAME_TOOL_ORIGINS.test(frameOrigin) || !PATCH_SUBFRAME_TOOL_ORIGINS.test(tabOrigin)) return;
++        const list = (Array.isArray(subframeTools) ? subframeTools : [])
++          .filter((t) => t && typeof t.name === 'string')
++          .map((t) => ({ ...t, frameId: subFrameId }));
++        let frames = subframeToolsRef.current.get(subTabId);
++        if (!frames) subframeToolsRef.current.set(subTabId, (frames = new Map()));
++        frames.set(subFrameId, list);
++        tabSessions.update(subTabId, { tools: mergedTools(subTabId) });
++        return;
++      }
++
+       if (sender?.frameId && sender.frameId !== 0) return;
+       if (tools === undefined && message === undefined && !url) return;
+ 
+@@ -101,9 +148,10 @@ export function useActiveTabTools(activeTabId: number | null): UseActiveTabTools
+ 
+       const pageUrl = url || sender?.tab?.url || '';
+       if (pageUrl) bumpTabSeq(tabId);
++      if (tools !== undefined) topToolsRef.current.set(tabId, tools); // LOCAL PATCH
+       tabSessions.update(tabId, (previous) => ({
+         statusMsg: message !== undefined ? message : tools !== undefined ? '' : previous.statusMsg,
+-        tools: tools !== undefined ? tools : previous.tools,
++        tools: tools !== undefined ? mergedTools(tabId) : previous.tools, // LOCAL PATCH: was `tools`
+         domain: pageUrl ? domainFor(pageUrl) : previous.domain,
+         origin: pageUrl ? originOfUrl(pageUrl) : previous.origin,
+         favicon: pageUrl ? faviconFor(pageUrl, sender?.tab?.favIconUrl) : previous.favicon,
+@@ -131,6 +179,8 @@ export function useActiveTabTools(activeTabId: number | null): UseActiveTabTools
+       // The tools of the page being left no longer exist. Clearing them keeps
+       // a turn from declaring tools that have gone.
+       if (changeInfo.url) {
++        topToolsRef.current.delete(tabId); // LOCAL PATCH
++        subframeToolsRef.current.delete(tabId); // LOCAL PATCH
+         tabSessions.update(tabId, {
+           tools: [],
+           statusMsg: '',

@@ -130,6 +130,17 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Why:** the extension can't open links (run 1), so a returned link alone would leave the PDF undelivered. It also fixes most of D13's "known gap", because the link is used in the same step that marks the order delivered.
 - **What it means for Q5:** the PDF reaches the owner's Downloads folder through the agent's tool call, but the *model* never sees the file's contents. It only sees the confirmation and the size.
 
+## D20. Local patch to the test agent: accept subframe tools from `*.stripe.com`
+- **Date:** 2026-11-13, after agent run 2. **Approved by the user** ("let's move on to 2. I'd like to see if we can make this work").
+- **Finding that led here:** the extension already re-lists tools after every round (`waitForToolsToSettle` → `requestTabTools`), so the list wasn't stale. Instead, the extension learns tools **only** through the top frame's `getTools({ fromOrigins })`, which returns a subframe's tools only if that subframe **exposed** them to the top origin. Stripe exposes `get_order_summary`, `select_payment_method` and `submit_payment` this way (they arrived as frame `401`). `fill_payment_form`, visible in DevTools, never did. Separately, the side panel discards any report from a subframe (`if (sender.frameId !== 0) return`).
+- **Decision:** patch the local clone only (`c:\claude\webmcp-extension`, base `051a93c`; full diff in `docs/extension-patch.diff`, 2 files, +94/−2):
+  - `extension/content.ts`: in a subframe whose origin matches `^https://([a-z0-9-]+\.)*stripe\.com$`, list the tools that frame registered itself (`getTools()` filtered to `tool.window === window`). Report them as `{ subframeTools }` now and on every `toolchange`.
+  - `extension/sidepanel/hooks/useActiveTabTools.ts`: accept a `subframeTools` report only if **Chrome's sender record** shows both the frame URL and the tab URL on that allow-listed origin. Stamp the tools with Chrome's `sender.frameId`, so a frame can only speak for itself. Merge with the top frame's list, de-duplicated by frame and name. Clear both on navigation.
+  - Tool **execution** in a subframe was already supported upstream (`executeTool` finds `t.window === window` in the target frame).
+- **Checks:** `npm run typecheck` passes; `npm run test:unit` **209/209 pass**; rebuilt `dist/` contains the patch.
+- **Why limit it to Stripe:** the upstream rule (only exposed subframe tools reach the agent) is a deliberate safety boundary, so an arbitrary iframe such as an ad can't offer tools to the agent. The patch relaxes it only for Stripe frames on Stripe tabs.
+- **For the write-up:** the agent is no longer stock. Runs from run 3 onward use "extension `051a93c` + local patch D20". The underlying question (should agents see tools that a subframe didn't expose to the top origin, and is Stripe's split intended?) is worth raising with Google and/or Stripe. **Not filed: needs the user's OK.**
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**
