@@ -1,0 +1,18 @@
+# Secrets: never commit. Wrangler reads .env (or .dev.vars) for local secrets.
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Dependencies and build output
+node_modules/
+dist/
+
+# Wrangler's local state (simulated Durable Object storage, etc.)
+.wrangler/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
