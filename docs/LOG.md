@@ -316,3 +316,16 @@ Regression: `bash tests/auth-checks.sh` gives **33 passed, 0 failed**.
 
 ### Not testable from the terminal
 The browser-side behaviour (tools appearing after sign-in, surviving a reload, disappearing on sign-out) needs Chrome with WebMCP. Handed to the user for a DevTools check.
+
+### Browser check of Step 4 (done by the user)
+Checklist results in Chrome 157, DevTools → Application → WebMCP:
+1. New code: OK.
+2. Before sign-in, only `sign_in` listed: **OK**.
+3. `sign_in`: output listed the new tools, and three tools appeared: **OK**.
+4. `get_product`: **at first the user saw no output and thought it hadn't run.** The server log showed `POST /api/product 200 OK` three times, so it had run and succeeded. Following up (the newest row in the "Invoked tools" log, and/or a Console call to `document.modelContext.executeTool()`), the user confirmed the product output. **OK.**
+5. Reload while signed in: tools restored automatically (`GET /api/session 200`, then `get_product` ran again): **OK**.
+6. `sign_out`: tools dropped back to only `sign_in` and the cookie was removed: **OK**.
+
+**Note for the write-up:** a tool's result isn't necessarily shown next to the "Run tool" button in the DevTools WebMCP pane. Check the "Invoked tools" log, or call `executeTool` from the Console. A tool can succeed while looking as if it did nothing, so the server log was the quickest way to tell.
+
+Outcome: Step 4 verified in the browser.
