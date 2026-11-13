@@ -424,3 +424,57 @@ get_download: ord_uzc8ag5vk2gb59fs4vxg -> already_delivered
 - **Gap, stated plainly:** the server received only **one** request for the download link. Reopening the link did not reach the server: either it wasn't reopened, or Chrome served it from its download history. So **single-use of the download link has not yet been observed on a real paid order.** (The code deletes the token on first redemption, and the tests show unknown or used tokens get 404.) Re-check during the agent run.
 
 **Outcome:** the backend purchase flow works end to end in Stripe test mode: sign-in → checkout → Stripe payment → paid check → single-use download → PDF. Step 5 complete.
+
+---
+
+## 2026-11-13 (UTC-7): Step 6 setup, the Example Agentic Chrome Extension
+
+Pushed `28640a2` and `f91b300` on the user's instruction. The user approved Step 6, including downloading the extension and installing its dependencies.
+
+### Extension download and review
+- `git clone https://github.com/GoogleChromeLabs/webmcp-extension.git c:\claude\webmcp-extension`, a separate folder next to this project. Commit **`051a93c` (2026-11-11)**, "Merge pull request #93".
+- Reviewed before installing:
+  - `package.json` has no install or postinstall scripts of its own.
+  - Dependencies: Vercel AI SDK (`ai`, `@ai-sdk/anthropic|google|openai`), React, esbuild, puppeteer-core, `@puppeteer/browsers`.
+  - `.env` is git-ignored.
+- **What the agent can do (relevant to Q2 and Q5):**
+  - `extension/manifest.json` permissions are `sidePanel`, `scripting`, `webNavigation` and `favicon`, with host permission `<all_urls>`. There is **no `tabs` or `downloads` permission**.
+  - A search of the extension source for `tabs.create`, `tabs.update`, `chrome.downloads` and `window.open` found nothing.
+  - `server/tools.ts` gives the model **only the page's own WebMCP tools** ("No tool is given an `execute`. Tools belong to the web page").
+  - The system prompt (`shared/systemPrompt.ts`) includes: "Do not try to use other tools than the available ones."
+  - **Prediction, recorded before the run:** the agent will get the Stripe URL from `create_checkout` but has no way to open it. Q2 will likely fail as designed. It may ask the user to open the link, which would break "no human clicking".
+- **Its logs:** the model server keeps a log of requests and responses **in memory only** (last 500 entries, no file writes found). The log dashboard needs `WEBMCP_AUTH_TOKEN`, and the server binds to `127.0.0.1`. These logs will contain the one-time code and the Stripe URL. That is acceptable for a local, single-use code, and both are redacted in `docs/test-runs/`. `WEBMCP_LOG_REDACT_BODIES=1` would hide them, but would also hide the transcript we need.
+- `npm install`: added 78 packages, "found 0 vulnerabilities". `npm run build`: "Generated and saved new WEBMCP_AUTH_TOKEN in .env" and "Build complete with WebMCP auth token injected." `dist/manifest.json` exists.
+
+### Model choice
+- Current IDs and prices are from Anthropic's model list (cached 2026-11-03), shown to the user: Opus 5.5 `claude-opus-5-5` ($4/$20 per M tokens), Sonnet 5.5 `claude-sonnet-5-5` ($2/$10), Haiku 5.5 `claude-haiku-5-5` ($0.10/$0.50), Fable 5.2 `claude-fable-5-2` ($8/$40).
+- The extension's built-in Anthropic default is `anthropic:claude-sonnet-4-5` (`server/providers.ts:58`), an older model.
+- Compatibility check: the extension calls `streamText({ model, system, messages, tools, abortSignal })` with no `temperature` and no forced `toolChoice`, both of which current models reject. The installed `@ai-sdk/anthropic` 4.0.88 contains the `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` IDs.
+- **The user chose Opus 5.5.** Wrote `MODEL=anthropic:claude-opus-5-5` and an empty `ANTHROPIC_API_KEY=` line to the extension's `.env`. The user fills in the key themselves.
+
+### Secrets audit and guard (asked for by the user)
+The user asked to make sure no sensitive data is exposed now or later. The audit compared exact secret values loaded in memory; no values were printed:
+```
+Anthropic key format: starts sk-ant-: yes | length 106 | spaces/quotes: no
+1. .env (project): ignored | webmcp-extension/.env: ignored
+2. .env-type files ever committed (all history): only .env.example
+3. Exact values of STRIPE_SECRET_KEY, ADMIN_TOKEN, ANTHROPIC_API_KEY, WEBMCP_AUTH_TOKEN in any commit: not found (x4)
+4. Key-shaped strings anywhere in history: 0
+5. GitHub (origin/main) == local HEAD: yes
+6. All 11 server/test/agent output logs from this session: secrets 0, Stripe URLs 0
+7. Extension clone remote: GoogleChromeLabs/webmcp-extension (fetch). Push URL now disabled.
+```
+Added the pre-commit guard (D17) and **tested it by trying bad commits on purpose**:
+```
+Test A: git add -f .env                -> refused (secret file, key-shaped, STRIPE_SECRET_KEY value, ADMIN_TOKEN value)
+Test B: file with fake sk_test_ key    -> refused (key-shaped string)
+Test C: file with real ADMIN_TOKEN     -> refused (exact secret value)
+Test D: harmless file                  -> allowed (then undone)
+```
+HEAD was unchanged afterwards (`f91b300`); no test commit remains.
+
+**Remaining exposure paths and their status:**
+- The extension bundle (`webmcp-extension/dist/`) contains `WEBMCP_AUTH_TOKEN`, as its README warns. `dist/` is git-ignored there and the token only unlocks the local model server on 127.0.0.1.
+- The extension's in-memory log will hold the one-time code and the Stripe URL during the agent run. It is in memory only, behind a token, local.
+- Wrangler's local state (`.wrangler/`) holds only hashes of codes and sessions. It is git-ignored.
+- **For when the repo goes public:** consider turning on GitHub's secret scanning / push protection in the repo settings (on GitHub, under Settings → Security). It blocks key-shaped pushes on GitHub's side, even if the local hook were skipped. Availability for private repos depends on the plan; for public repos it's generally available. Not verified here.

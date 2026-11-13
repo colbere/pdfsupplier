@@ -4,7 +4,16 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { ROOT, ENV_PATH, readEnv } from "./lib.mjs";
+
+// Turn on the pre-commit secret guard (scripts/git-hooks/pre-commit) for this clone.
+try {
+  execFileSync("git", ["config", "core.hooksPath", "scripts/git-hooks"], { cwd: ROOT, stdio: "ignore" });
+  console.log("Secret guard enabled: commits containing .env files or keys will be refused.");
+} catch {
+  console.log("Note: could not enable the git secret guard (is this a git repository?).");
+}
 
 if (!existsSync(ENV_PATH)) {
   copyFileSync(join(ROOT, ".env.example"), ENV_PATH);

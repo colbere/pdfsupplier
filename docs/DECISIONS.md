@@ -105,6 +105,18 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - Any text that might contain a key or Stripe URL is passed through a redaction function before logging. The Stripe URL is never logged.
 - **Reason:** These follow the brief's section 8. The extra ID and livemode checks are cheap and close off mix-ups.
 
+## D17. Pre-commit secret guard; pushing disabled on the extension clone
+- **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
+- **Decision:**
+  - `scripts/git-hooks/pre-commit`, enabled by `npm run setup` (`git config core.hooksPath scripts/git-hooks`). It refuses a commit if the staged changes contain:
+    - any `.env*` or `.dev.vars*` file except `.env.example`;
+    - a Stripe or Anthropic key-shaped string (`(sk|rk)_(live|test)_…`, `sk-ant-…`, `whsec_…`);
+    - the exact value of any secret in `.env`.
+  - It never prints values.
+  - The same hook is enabled on the extension clone (`c:\claude\webmcp-extension`). That clone's push URL is set to `DISABLED-never-push-this-clone`, because it is Google's repository and must never receive our commits.
+- **Alternatives:** Rely on `.gitignore` alone (bypassed by `git add -f`, or by pasting a key into a tracked file). Third-party scanners such as gitleaks (another dependency).
+- **Reason:** It's a cheap, local, dependency-free second layer. A git hook can be skipped with `--no-verify`, so for the public repo GitHub's push protection is a useful third layer (see the note in LOG.md).
+
 ## D16. "Refuse to start" in two layers
 - **Date:** 2026-11-13 (Step 5)
 - **Decision:**

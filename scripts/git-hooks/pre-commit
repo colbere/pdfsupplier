@@ -1,0 +1,47 @@
+#!/bin/sh
+# Pre-commit secret guard. Blocks a commit if the staged changes contain:
+#   1. any .env / .dev.vars file (except .env.example)
+#   2. anything shaped like a Stripe or Anthropic key
+#   3. the exact value of any secret in this repo's .env (or extra files in PDFS_SECRET_FILES)
+# Never prints secret values. Activated by `npm run setup` (git config core.hooksPath).
+# Bypassing with --no-verify is possible but should never be needed.
+
+fail=0
+root=$(git rev-parse --show-toplevel)
+
+# 1. Secret files
+bad_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(^|/)(\.env($|\.)|\.dev\.vars)' | grep -vE '(^|/)\.env\.example$')
+if [ -n "$bad_files" ]; then
+  echo "BLOCKED: these secret files are staged:"; echo "$bad_files" | sed 's/^/  /'
+  fail=1
+fi
+
+# Staged added lines only
+added=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -vE '^\+\+\+')
+
+# 2. Key-shaped strings (Stripe secret/restricted keys, Anthropic keys, Stripe webhook secrets)
+if printf '%s\n' "$added" | grep -qE '(sk|rk)_(live|test)_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|whsec_[A-Za-z0-9]{20,}'; then
+  echo "BLOCKED: staged changes contain something shaped like an API key."
+  fail=1
+fi
+
+# 3. Exact secret values from .env files (values are compared, never printed)
+for f in "$root/.env" $PDFS_SECRET_FILES; do
+  [ -f "$f" ] || continue
+  while IFS= read -r line; do
+    case "$line" in \#*|'') continue ;; esac
+    v=$(printf '%s' "$line" | sed -n 's/^[A-Za-z_][A-Za-z0-9_]*=//p' | tr -d '\r')
+    [ ${#v} -ge 16 ] || continue
+    case "$v" in *REPLACE*|generated_by*) continue ;; esac
+    if printf '%s\n' "$added" | grep -qF -- "$v"; then
+      echo "BLOCKED: staged changes contain the value of $(printf '%s' "$line" | cut -d= -f1) from $(basename "$f")."
+      fail=1
+    fi
+  done < "$f"
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "Commit refused by the secret guard. Unstage the file or remove the secret, then commit again."
+  exit 1
+fi
+exit 0
