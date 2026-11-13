@@ -559,3 +559,18 @@ Run 4 details are in `docs/test-runs/2026-11-13-1556-opus55-run4.md`.
 Fix D22:
 - Docs check: `payment_method_types` is not allowed on API `2026-09-30.endive` and later. The documented replacements are `allowed_payment_method_types` and `wallet_options.link.display=never`.
 - Added both to `createCheckoutSession`. A test session read back `payment_method_types ["card"]`, Link `never`, `phone_number_collection.enabled false`. `purchase-checks.sh` 26/26.
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 5, then extension patch D23
+
+Run 5 details are in `docs/test-runs/2026-11-13-1606-opus55-run5.md`.
+- After `open_checkout`, the model was sent **zero tools** and answered with nothing (the user typed "try again").
+- D22 confirmed: 4 Stripe tools, no Link.
+- The form filled completely, but `fill_payment_form` timed out twice. The agent asked the user to check the form or retry. Nothing was submitted.
+
+Fix D23:
+- `waitForToolsToSettle` `emptyTimeoutMs` (15 s) for a navigated-to page that has no tools yet.
+- The server turns late tool results into a note instead of a 409 for a chat that still exists.
+- My first version of the settle change **failed the new unit test** (it returned without the quiet period once tools arrived late). Fixed.
+- typecheck OK, unit tests **210/210**, rebuilt, model server restarted ("Answering with anthropic:claude-opus-5-5").

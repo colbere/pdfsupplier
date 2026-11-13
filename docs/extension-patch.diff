@@ -147,6 +147,18 @@ index c2b8221..e8655b1 100644
          tabSessions.update(tabId, {
            tools: [],
            statusMsg: '',
+diff --git a/extension/sidepanel/hooks/useAgentSession.ts b/extension/sidepanel/hooks/useAgentSession.ts
+index 7c0e68f..0bb22d1 100644
+--- a/extension/sidepanel/hooks/useAgentSession.ts
++++ b/extension/sidepanel/hooks/useAgentSession.ts
+@@ -587,6 +587,7 @@ export function useAgentSession(
+         await waitForToolsToSettle(toolsView, {
+           requestTools: () => requestTabTools(turnTabId),
+           signal,
++          emptyTimeoutMs: 15_000, // LOCAL PATCH: wait for a navigated-to page's tools
+         });
+         if (signal.aborted) break;
+ 
 diff --git a/extension/sidepanel/services/extensionBridge.ts b/extension/sidepanel/services/extensionBridge.ts
 index 8ad5266..3389dbb 100644
 --- a/extension/sidepanel/services/extensionBridge.ts
@@ -225,3 +237,166 @@ index 8ad5266..3389dbb 100644
  async function raceWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | void> {
    let timerId: ReturnType<typeof setTimeout> | undefined;
    const timeoutPromise = new Promise<void>((resolve) => {
+diff --git a/extension/sidepanel/services/toolResults.ts b/extension/sidepanel/services/toolResults.ts
+index 6369ab7..0f18c14 100644
+--- a/extension/sidepanel/services/toolResults.ts
++++ b/extension/sidepanel/services/toolResults.ts
+@@ -87,29 +87,47 @@ export async function waitForToolsToSettle(
+     quietMs = 250,
+     timeoutMs = 2000,
+     pollMs = 25,
++    emptyTimeoutMs,
+   }: {
+     requestTools: () => Promise<void>;
+     signal?: AbortSignal;
+     quietMs?: number;
+     timeoutMs?: number;
+     pollMs?: number;
++    /**
++     * LOCAL PATCH (PDF Supplier experiment): while the page reports no tools at
++     * all, keep waiting up to this long instead of `timeoutMs`. A page reached
++     * by navigation (e.g. Stripe Checkout) can take several seconds to register
++     * its tools, and a turn sent with none gets an empty answer.
++     */
++    emptyTimeoutMs?: number;
+   }
+ ): Promise<void> {
+   const start = performance.now();
+   // Every report replaces the array, even when the tools are the same.
+   let seen = toolsRef.current;
+   let lastReport: number | null = null;
++  const stillEmpty = () => emptyTimeoutMs !== undefined && toolsRef.current.length === 0;
++  // While empty: wait up to the cap. Once tools arrive late, still allow the
++  // usual quiet period after the last report (never beyond the cap).
++  const limit = () => {
++    if (emptyTimeoutMs === undefined) return timeoutMs;
++    const cap = Math.max(timeoutMs, emptyTimeoutMs);
++    if (toolsRef.current.length === 0) return cap;
++    if (lastReport !== null) return Math.min(cap, Math.max(timeoutMs, lastReport - start + quietMs + pollMs));
++    return timeoutMs;
++  };
+ 
+   try {
+     await requestTools();
+   } catch {}
+ 
+-  while (!signal?.aborted && performance.now() - start < timeoutMs) {
++  while (!signal?.aborted && performance.now() - start < limit()) {
+     await new Promise((resolve) => setTimeout(resolve, pollMs));
+     if (toolsRef.current !== seen) {
+       seen = toolsRef.current;
+       lastReport = performance.now();
+     }
+-    if (lastReport !== null && performance.now() - lastReport >= quietMs) return;
++    if (lastReport !== null && performance.now() - lastReport >= quietMs && !stillEmpty()) return;
+   }
+ }
+diff --git a/package-lock.json b/package-lock.json
+index d4f4f4a..1f684b5 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -672,6 +672,7 @@
+       "integrity": "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "csstype": "^3.2.2"
+       }
+@@ -1214,7 +1215,8 @@
+       "resolved": "https://registry.npmjs.org/devtools-protocol/-/devtools-protocol-0.0.1704951.tgz",
+       "integrity": "sha512-GQhQOs9u/Mvm1zMtJIH872JS4AskuZdUSsPNPk4ChahtWAUqgz6atEtIsMt+nO7MqF1Ic4HxII/k8Cu36JivNg==",
+       "dev": true,
+-      "license": "BSD-3-Clause"
++      "license": "BSD-3-Clause",
++      "peer": true
+     },
+     "node_modules/dom-serializer": {
+       "version": "3.1.1",
+@@ -1601,6 +1603,7 @@
+       "resolved": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
+       "integrity": "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw==",
+       "license": "MIT",
++      "peer": true,
+       "engines": {
+         "node": ">=0.10.0"
+       }
+@@ -1842,6 +1845,7 @@
+       "resolved": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
+       "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
+       "license": "MIT",
++      "peer": true,
+       "funding": {
+         "url": "https://github.com/sponsors/colinhacks"
+       }
+diff --git a/server/server.ts b/server/server.ts
+index aebd15c..91e5eb4 100644
+--- a/server/server.ts
++++ b/server/server.ts
+@@ -358,7 +358,10 @@ const server = http.createServer(async (req, res) => {
+     }
+ 
+     if (url.pathname === '/api/chat' && req.method === 'POST') {
+-      const { message, toolResponses, tools, chatId } = await parseJsonBody(req);
++      // LOCAL PATCH: `message` and `toolResponses` are `let` (see the late-results note below).
++      const body = await parseJsonBody(req);
++      let { message, toolResponses } = body;
++      const { tools, chatId } = body;
+ 
+       if (!languageModel) {
+         const problem = providerConfig.problem || 'No model is configured on the backend server.';
+@@ -391,6 +394,20 @@ const server = http.createServer(async (req, res) => {
+       const currentChatId = chatId || randomUUID();
+       let baseHistory = chatSessions.get(currentChatId);
+ 
++      // LOCAL PATCH (PDF Supplier experiment): tool results arriving for a chat
++      // that still exists but has no pending call (seen in agent run 4, just
++      // after a Stripe payment, cause undetermined) used to end the chat. Hand
++      // them to the model as a note instead, so the conversation carries on.
++      if (message === undefined && !hasPendingToolCalls(baseHistory) && baseHistory && baseHistory.length > 0) {
++        const lines = (Array.isArray(toolResponses) ? toolResponses : []).map((r: { functionResponse?: { name?: string; response?: unknown } }) => {
++          const name = r?.functionResponse?.name ?? 'unknown tool';
++          return `- ${name}: ${JSON.stringify(r?.functionResponse?.response ?? null).slice(0, 1500)}`;
++        });
++        message = `[Note from the agent app, not the user] These tool results arrived after the conversation had moved on:\n${lines.join('\n')}\nContinue the task from here.`;
++        toolResponses = undefined;
++        console.log('  ⚠️  Late tool results turned into a note instead of ending the chat.');
++      }
++
+       if (message === undefined && !hasPendingToolCalls(baseHistory)) {
+         // Tool results with no call to answer: the server restarted or the
+         // chat was evicted. Say so, rather than let the provider reject it.
+diff --git a/tests/extension/servicesAndHooks.test.ts b/tests/extension/servicesAndHooks.test.ts
+index 055ec39..d8c86f4 100644
+--- a/tests/extension/servicesAndHooks.test.ts
++++ b/tests/extension/servicesAndHooks.test.ts
+@@ -324,6 +324,29 @@ test('waitForToolsToSettle gives up when no tools are reported, and stops when a
+   assert.ok(elapsed < 300, `stopped after ${elapsed}ms`);
+ });
+ 
++// LOCAL PATCH (PDF Supplier experiment): emptyTimeoutMs.
++test('waitForToolsToSettle with emptyTimeoutMs keeps waiting while a navigated-to page has no tools yet', async () => {
++  const toolsRef: { current: { name: string }[] } = { current: [] };
++  const options = { requestTools: async () => {}, quietMs: 50, pollMs: 5, timeoutMs: 100 };
++
++  // Tools arrive after the normal timeout but before emptyTimeoutMs.
++  setTimeout(() => {
++    toolsRef.current = [{ name: 'get_order_summary' }];
++  }, 300);
++  let start = performance.now();
++  await waitForToolsToSettle(toolsRef, { ...options, emptyTimeoutMs: 2000 });
++  let elapsed = performance.now() - start;
++  assert.deepEqual(toolsRef.current.map((t) => t.name), ['get_order_summary']);
++  assert.ok(elapsed >= 340 && elapsed < 1000, `returned after ${elapsed}ms`);
++
++  // Still gives up at emptyTimeoutMs if nothing ever arrives.
++  toolsRef.current = [];
++  start = performance.now();
++  await waitForToolsToSettle(toolsRef, { ...options, emptyTimeoutMs: 400 });
++  elapsed = performance.now() - start;
++  assert.ok(elapsed >= 400 && elapsed < 900, `gave up after ${elapsed}ms`);
++});
++
+ function ndjsonStreamResponse(chunks: unknown[]): Response {
+   const body = `${chunks.map((chunk) => JSON.stringify(chunk)).join('\n')}\n`;
+   const encoder = new TextEncoder();

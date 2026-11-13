@@ -158,6 +158,18 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - Turning Link off in the Dashboard: it works too, but it is an account setting outside the code, and not reproducible from the repo.
 - **Reason:** Link's opt-in added a required phone field that no agent tool fills, which blocked payment in run 4. The brief only calls for a test card. Card-only also removes the Cash App and Klarna choices, so the agent has a simpler form.
 
+## D23. Third local patch to the test agent: wait for a new page's tools; don't drop the chat on late results
+- **Date:** 2026-11-13, after agent run 5. The user asked for fixes.
+- **Decision:**
+  1. `waitForToolsToSettle` gets an optional `emptyTimeoutMs`.
+     - While the page reports **no** tools, it waits up to that long instead of `timeoutMs`.
+     - Once tools arrive late, it still allows the normal quiet period after the last report, capped at the same limit.
+     - The agent loop passes `emptyTimeoutMs: 15_000`. The default behaviour is unchanged for other callers, and the upstream tests are untouched.
+     - New unit test added. **The first version failed that test:** it returned the instant tools appeared, skipping the quiet period, which could miss Stripe's later tools. Fixed, and the test passes.
+  2. `server/server.ts`: if tool results arrive for a chat that **exists** but has no pending call (run 4's 409), the server passes them to the model as a clearly marked note ("[Note from the agent app, not the user] These tool results arrived after the conversation had moved on: …") instead of ending the chat. The 409 remains for a chat that is truly gone.
+- **Checks:** typecheck passes; unit tests **210/210** (209 upstream + 1 new). Rebuilt; model server restarted. The cumulative patch (D20, D21, D23): 7 source/test files (plus a `package-lock.json` change from `npm install`), in `docs/extension-patch.diff`.
+- **Not verified live yet:** the late-results path. Exercising it would need a real model call in the failure state from run 4.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**
