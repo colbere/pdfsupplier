@@ -600,3 +600,26 @@ Verification:
 - Stripe's `fill_payment_form` never resolves.
 - The approval was given before the form was filled and was carried over to `submit_payment`.
 - The empty tool list after navigation persisted in run 6 (possibly the extension was not reloaded after D23; to confirm).
+
+### Clarifications after run 6, and closing Phase 1 (user decisions)
+- The user **had not reloaded the extension** before run 6. The side panel therefore ran patches D20 and D21 only, and **D23's 15-second "wait for tools" was not active**, which explains the empty tool list after `open_checkout`. D23's server-side late-results note *was* active (the model server had been restarted) and fired in step 9. **D23's client-side fix remains untested live.**
+- Optional control Q6 (Claude in Chrome): **not run**, by the user's choice.
+- **The user closed Phase 1.**
+
+## Phase 1: closing summary (2026-11-13)
+- **Result:** an AI agent (the Example Agentic Chrome Extension + Claude Opus 5.5) completed the purchase using only WebMCP tools: sign-in with a one-time code → product → checkout → Stripe's own WebMCP tools (card fill and submit, after the user's confirmation) → server-verified `paid` → single-use download → PDF saved. There were no clicks on the page, in Stripe test mode, after six runs.
+- **What it took** (see DECISIONS.md):
+  - **Site:** `open_checkout` navigates the tab to Stripe (D18); `get_download` saves the file itself (D19); card-only Checkout with Link off (D22).
+  - **Agent:** three local patches to the extension (D20 subframe tools, D21 timeout and navigation result, D23 settle wait and late results). They are not upstream; the diff is in `docs/extension-patch.diff`.
+- **What breaks, for the write-up:**
+  1. The stock extension cannot open links, so a store must move the tab itself.
+  2. Stripe exposes only some of its Checkout tools to the top frame; `fill_payment_form` lives in an iframe and isn't exposed.
+  3. `fill_payment_form` fills the form but never resolves.
+  4. Stripe Link adds a phone field no tool fills.
+  5. After navigation, the agent can be sent a turn with no tools.
+  6. An approval given up front was reused for a later submit.
+- **Left for Phase 2 / later:**
+  - a live run with D23 loaded;
+  - Q13 (abuse protection once live);
+  - whether to report the subframe-tool and `fill_payment_form` behaviour to Google or Stripe (**needs the user's OK**);
+  - the custom Claude harness, deployment, the domain, a real $1 charge (brief section 12).

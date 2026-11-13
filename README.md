@@ -8,14 +8,15 @@ An experiment: can an AI agent find a store, prove who it's acting for, pay, and
 
 ## Status
 
-Phase 1, in progress. See [docs/LOG.md](docs/LOG.md) for the step-by-step history.
+**Phase 1 complete (2026-11-13).** In run 6 an AI agent (Google's example WebMCP Chrome extension, with three local patches, running Claude Opus 5.5) signed in, paid in Stripe test mode using Stripe's own WebMCP tools, and saved the PDF, with no clicks on the page. See [docs/test-runs/](docs/test-runs/) for every run, [docs/LOG.md](docs/LOG.md) for the full history and pass assessment, and [docs/DECISIONS.md](docs/DECISIONS.md) for why each change was made.
 
 ## How it works (short version)
 
 1. The page publishes one tool, `sign_in`.
 2. The owner runs a command in the terminal to get a one-time code and gives it to the agent.
-3. After sign-in, the page publishes the purchase tools: `get_product`, `create_checkout`, `check_order`, `get_download` and `sign_out`.
-4. The agent pays on Stripe's test checkout page using the test card, then collects a download link for the PDF.
+3. After sign-in, the page publishes the purchase tools: `get_product`, `create_checkout`, `open_checkout`, `check_order`, `get_download` and `sign_out`.
+4. `open_checkout` moves the tab to Stripe's test checkout page, where Stripe's own WebMCP tools let the agent pay with the test card. Stripe then sends the tab back to the store.
+5. `check_order` confirms payment with Stripe, and `get_download` saves the PDF to the browser's download folder.
 
 The server checks the sign-in on every purchase request. Hiding tools in the browser is not treated as security.
 
@@ -41,6 +42,9 @@ All commands run in a terminal opened in this folder.
 | `npm run kill-switch -- off` | Turns sign-in back on |
 | `npm run kill-switch -- status` | Shows kill switch, active code, sessions and recent failures |
 | `npm run unlock` | Clears the lockout after too many wrong codes |
+
+### The test agent
+The agent is Google's [Example Agentic Chrome Extension](https://github.com/GoogleChromeLabs/webmcp-extension) (commit `051a93c`), cloned **next to** this folder. It needs the local changes in [docs/extension-patch.diff](docs/extension-patch.diff) (apply with `git apply` inside the clone, then `npm install`, `npm run build`, `npm run server`). Its own `.env` holds `ANTHROPIC_API_KEY` (you paste it yourself) and `MODEL=anthropic:claude-opus-5-5`.
 
 ### Tests
 With the site running: `bash tests/auth-checks.sh` runs the sign-in and lockdown checks.
