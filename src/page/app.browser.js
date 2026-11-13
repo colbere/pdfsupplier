@@ -66,6 +66,88 @@
             `What it is: ${p.description}`,
             `Delivery: ${p.delivery}`,
             p.note,
+            "To buy it, call create_checkout.",
+          ].join("\n");
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "create_checkout",
+      description:
+        "Starts a purchase of the PDF ($1.00 USD, Stripe test mode). Creates a Stripe Checkout page and " +
+        "returns its URL and an order_id. This does not charge anything: payment happens on the Stripe " +
+        "page, which has its own tools. If an unpaid order already exists, it is returned again. Requires being signed in.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+      async execute() {
+        try {
+          const { data } = await callServer("/api/checkout");
+          if (!data || !data.ok) return (data && data.error) || "Could not create a checkout.";
+          return [
+            data.reused ? "An unpaid order already exists; here it is again." : "Order created.",
+            `order_id: ${data.order_id}`,
+            `Stripe checkout URL: ${data.checkout_url}`,
+            `The checkout page expires at ${data.expires_at}.`,
+            "Next: open the checkout URL and pay there. Then call check_order with this order_id.",
+          ].join("\n");
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "check_order",
+      description:
+        "Checks with Stripe whether an order has been paid. Takes the order_id from create_checkout. " +
+        "Returns paid, unpaid, expired or delivered. Requires being signed in.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          order_id: { type: "string", description: "The order_id returned by create_checkout (starts with ord_)." },
+        },
+        required: ["order_id"],
+      },
+      annotations: { readOnlyHint: true, consequentialHint: false, untrustedContentHint: false },
+      async execute({ order_id } = {}) {
+        try {
+          const { data } = await callServer("/api/order", { body: { order_id } });
+          if (!data || !data.ok) return (data && data.error) || "Could not check the order.";
+          const id = data.order_id;
+          switch (data.status) {
+            case "paid": return `Order ${id} is paid. Call get_download with this order_id to get the PDF.`;
+            case "delivered": return `Order ${id} is paid and has already been delivered. Download links are single-use.`;
+            case "expired": return `Order ${id} was not paid and its checkout page has expired. Call create_checkout to start again.`;
+            default: return `Order ${id} is not paid yet (Stripe checkout status: ${data.checkout_status}). Complete payment on the Stripe checkout page, then call check_order again.`;
+          }
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "get_download",
+      description:
+        "Gets a download link for the PDF of a paid order. Takes the order_id. The link works once, " +
+        "expires in 5 minutes and needs this same signed-in browser session. Marks the order delivered, " +
+        "so it can only be called once per order. Call check_order first. Requires being signed in.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          order_id: { type: "string", description: "The order_id of a paid order (starts with ord_)." },
+        },
+        required: ["order_id"],
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+      async execute({ order_id } = {}) {
+        try {
+          const { data } = await callServer("/api/download", { body: { order_id } });
+          if (!data || !data.ok) return (data && data.error) || "Could not get the download link.";
+          return [
+            `Order ${data.order_id} is delivered.`,
+            `Download link (single use, expires ${data.expires_at}): ${data.download_url}`,
+            'The file is a PDF named you-now-own-this.pdf containing the sentence "You now own this PDF."',
           ].join("\n");
         } catch {
           return UNREACHABLE;

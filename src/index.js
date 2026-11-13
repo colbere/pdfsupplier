@@ -1,11 +1,15 @@
 // The PDF Supplier: Cloudflare Worker (server).
-// Serves the single text-only page, its WebMCP script, the sign-in API and the admin API.
+// Serves the single text-only page, its WebMCP script, the tool API, the download route and the admin API.
 import PAGE_HTML from "./page/index.html";
 import APP_JS from "./page/app.browser.js";
 import { hashCode, sha256Hex, PRODUCT } from "./shared.js";
+import { isTestKey, redact, createCheckoutSession, getCheckoutSession, StripeError } from "./stripe.js";
+import { buildPdf } from "./pdf.js";
 export { Store } from "./store.js";
 
 const SESSION_COOKIE = "__Host-pdfs_session";
+const ORDER_ID_RE = /^ord_[a-z2-9]{20}$/;
+const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 // Strict security headers on every response.
 // The CSP only lets the browser run our own script (/app.js) and talk to our own server.
@@ -73,16 +77,29 @@ function randomToken() {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function randomOrderId() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"; // must match ORDER_ID_RE ([a-z2-9])
+  const limit = 256 - (256 % alphabet.length);
+  let id = "";
+  while (id.length < 20) {
+    for (const b of crypto.getRandomValues(new Uint8Array(32))) {
+      if (b < limit && id.length < 20) id += alphabet[b % alphabet.length];
+    }
+  }
+  return `ord_${id}`;
+}
+
 function sessionHash(token) {
   return sha256Hex(`pdfs-session:${token}`);
 }
 
-// Returns true if the request carries a valid, unexpired session (and refreshes its idle timer).
-// Used by every purchase endpoint (Steps 4 and 5).
-async function hasValidSession(request, env) {
+// Returns the session's hash if the request carries a valid, unexpired session
+// (and refreshes its idle timer). Otherwise null.
+async function validSessionHash(request, env) {
   const token = getCookie(request, SESSION_COOKIE);
-  if (!token || token.length < 40 || token.length > 60) return false;
-  return store(env).touchSession(await sessionHash(token));
+  if (!token || token.length < 40 || token.length > 60) return null;
+  const hash = await sessionHash(token);
+  return (await store(env).touchSession(hash)) ? hash : null;
 }
 
 // Browser API calls must come from our own page (defence in depth alongside SameSite=Strict).
@@ -148,8 +165,9 @@ async function handleAdmin(request, env, pathname) {
 async function withSession(request, env, url, handler) {
   if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
   if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
-  if (!(await hasValidSession(request, env))) return json(NOT_AUTHENTICATED, 401);
-  return handler();
+  const sh = await validSessionHash(request, env);
+  if (!sh) return json(NOT_AUTHENTICATED, 401);
+  return handler(sh);
 }
 
 function handleProduct() {
@@ -161,6 +179,108 @@ function handleProduct() {
       description: `A PDF file containing exactly one sentence: "${PRODUCT.contents}"`,
       delivery: "After payment, a single-use download link that expires in minutes.",
       note: "Payments run in Stripe test mode. No real money moves.",
+    },
+  });
+}
+
+function stripeFailure(where, err) {
+  // Server log gets the (redacted) reason; the agent gets a short, honest message.
+  console.log(`${where}: Stripe error ${err.status || ""} ${redact(err.message)}`);
+  return json({ ok: false, error: "The payment provider (Stripe) returned an error. Try again shortly; if it keeps failing, tell the store owner." }, 502);
+}
+
+async function handleCreateCheckout(env, url, sh) {
+  const s = store(env);
+  const prep = await s.prepareCheckout(sh);
+  if (prep.existing) {
+    const o = prep.existing;
+    console.log(`create_checkout: reused open order ${o.orderId}`);
+    return json({ ok: true, reused: true, order_id: o.orderId, checkout_url: o.url, expires_at: new Date(o.checkoutExpiresAt).toISOString() });
+  }
+  if (!prep.allowed) return json({ ok: false, error: prep.error }, 429);
+
+  const orderId = randomOrderId();
+  let session;
+  try {
+    session = await createCheckoutSession(env, { orderId, origin: url.origin });
+  } catch (err) {
+    if (err instanceof StripeError) return stripeFailure("create_checkout", err);
+    throw err;
+  }
+  await s.saveOrder(sh, { orderId, stripeSessionId: session.id, url: session.url, checkoutExpiresAt: session.expiresAt });
+  console.log(`create_checkout: order ${orderId} created`); // never log the Stripe URL
+  return json({ ok: true, reused: false, order_id: orderId, checkout_url: session.url, expires_at: new Date(session.expiresAt).toISOString() });
+}
+
+async function readOrderId(request) {
+  const body = await readJson(request);
+  const id = body && typeof body.order_id === "string" ? body.order_id.trim() : "";
+  return ORDER_ID_RE.test(id) ? id : null;
+}
+
+const NO_SUCH_ORDER = { ok: false, error: "No order with that order_id was found for this session. Use the order_id returned by create_checkout." };
+
+async function handleCheckOrder(request, env, sh) {
+  const orderId = await readOrderId(request);
+  if (!orderId) return json({ ok: false, error: "order_id is missing or malformed. It looks like ord_ followed by 20 characters." }, 400);
+  const s = store(env);
+  const order = await s.getOrderForSession(orderId, sh);
+  if (!order) return json(NO_SUCH_ORDER, 404);
+  if (order.status === "delivered") return json({ ok: true, order_id: orderId, status: "delivered" });
+
+  let cs;
+  try {
+    cs = await getCheckoutSession(env, order.stripeSessionId);
+  } catch (err) {
+    if (err instanceof StripeError) return stripeFailure("check_order", err);
+    throw err;
+  }
+  // Paid only when Stripe says paid AND Stripe's copy of our order_id matches.
+  const paid = cs.paymentStatus === "paid" && cs.orderId === orderId && cs.id === order.stripeSessionId && !cs.livemode;
+  if (paid) await s.markPaid(orderId);
+  console.log(`check_order: ${orderId} stripe=${cs.status}/${cs.paymentStatus} -> ${paid ? "paid" : "not paid"}`);
+  return json({ ok: true, order_id: orderId, status: paid ? "paid" : (cs.status === "expired" ? "expired" : "unpaid"), checkout_status: cs.status });
+}
+
+async function handleGetDownload(request, env, url, sh) {
+  const orderId = await readOrderId(request);
+  if (!orderId) return json({ ok: false, error: "order_id is missing or malformed. It looks like ord_ followed by 20 characters." }, 400);
+  const token = randomToken();
+  const r = await store(env).issueDownload(orderId, sh, await sha256Hex(`pdfs-dl:${token}`));
+  console.log(`get_download: ${orderId} -> ${r.ok ? "link issued, order delivered" : r.reason}`);
+  if (!r.ok) {
+    const msg = {
+      not_found: NO_SUCH_ORDER.error,
+      not_paid: "This order is not marked paid yet. Call check_order first; get_download works once check_order reports paid.",
+      already_delivered: "This order was already delivered. Download links are single-use, so a new link can't be issued.",
+    }[r.reason];
+    return json({ ok: false, error: msg }, r.reason === "not_found" ? 404 : 409);
+  }
+  return json({ ok: true, order_id: orderId, download_url: `${url.origin}/download/${token}`, expires_at: new Date(r.expiresAt).toISOString() });
+}
+
+async function handleDownload(request, env, token) {
+  // Requires the same signed-in session that requested the link (rule 4). See DECISIONS D13.
+  const sh = await validSessionHash(request, env);
+  if (!sh) {
+    console.log("download: refused (no valid session)");
+    return respond("Not signed in, or the session has expired.", "text/plain; charset=utf-8", 401);
+  }
+  if (!TOKEN_RE.test(token)) return respond("Download link not found.", "text/plain; charset=utf-8", 404);
+  const r = await store(env).redeemDownload(await sha256Hex(`pdfs-dl:${token}`), sh);
+  console.log(`download: ${r.ok ? `served PDF for ${r.orderId}` : `refused (${r.reason})`}`);
+  if (!r.ok) {
+    const msg = r.reason === "expired" ? "This download link has expired." : "Download link not found, already used, or not yours.";
+    return respond(msg, "text/plain; charset=utf-8", r.reason === "expired" ? 410 : 404);
+  }
+  return new Response(buildPdf(PRODUCT.contents), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="you-now-own-this.pdf"',
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -199,6 +319,12 @@ async function handleSignIn(request, env, url) {
 
 export default {
   async fetch(request, env) {
+    // Hard rule 1: never run with anything but a Stripe TEST key.
+    if (!isTestKey(env.STRIPE_SECRET_KEY)) {
+      console.log("REFUSING TO SERVE: STRIPE_SECRET_KEY is missing or is not a Stripe test key (rk_test_/sk_test_).");
+      return json({ ok: false, error: "Server misconfigured: a Stripe TEST key (rk_test_ or sk_test_) is required. Refusing to run." }, 503);
+    }
+
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method;
@@ -217,17 +343,22 @@ export default {
 
     // Lets the page find out whether it is signed in (e.g. after a reload).
     if (pathname === "/api/session" && method === "GET") {
-      const signedIn = await hasValidSession(request, env);
+      const signedIn = !!(await validSessionHash(request, env));
       return signedIn ? json({ ok: true, signedIn: true }) : json({ ...NOT_AUTHENTICATED, signedIn: false }, 401);
     }
 
-    if (pathname === "/api/product") {
-      return withSession(request, env, url, () => handleProduct());
-    }
+    if (pathname === "/api/product") return withSession(request, env, url, () => handleProduct());
+    if (pathname === "/api/checkout") return withSession(request, env, url, (sh) => handleCreateCheckout(env, url, sh));
+    if (pathname === "/api/order") return withSession(request, env, url, (sh) => handleCheckOrder(request, env, sh));
+    if (pathname === "/api/download") return withSession(request, env, url, (sh) => handleGetDownload(request, env, url, sh));
 
     if (pathname === "/api/sign-out" && method === "POST") {
       if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
       return handleSignOut(request, env);
+    }
+
+    if (pathname.startsWith("/download/") && method === "GET") {
+      return handleDownload(request, env, pathname.slice("/download/".length));
     }
 
     if (pathname.startsWith("/admin/")) {

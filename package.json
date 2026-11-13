@@ -6,7 +6,9 @@
   "description": "Experiment: can an AI agent buy a PDF using only WebMCP tools? Phase 1, local, Stripe test mode.",
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "predev": "node scripts/check-env.mjs",
     "dev": "wrangler dev",
+    "check-env": "node scripts/check-env.mjs",
     "new-code": "node scripts/new-code.mjs",
     "kill-switch": "node scripts/kill-switch.mjs",
     "unlock": "node scripts/unlock.mjs"

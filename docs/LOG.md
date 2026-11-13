@@ -329,3 +329,78 @@ Checklist results in Chrome 157, DevTools → Application → WebMCP:
 **Note for the write-up:** a tool's result isn't necessarily shown next to the "Run tool" button in the DevTools WebMCP pane. Check the "Invoked tools" log, or call `executeTool` from the Console. A tool can succeed while looking as if it did nothing, so the server log was the quickest way to tell.
 
 Outcome: Step 4 verified in the browser.
+
+---
+
+## 2026-11-13 (UTC-7): Step 5, Stripe account, key, and the purchase tools
+
+### Stripe account (done by the user)
+- Before guiding the user, re-read Stripe docs: get-started/account, sandboxes, the manage-sandboxes Dashboard page, restricted keys, keys, and the Checkout Sessions create API (`line_items.price_data`).
+  - Docs: "Immediately after you create a Stripe account, you can use a sandbox… without moving any money" (Q8).
+  - Docs: "Write permissions imply read permissions."
+  - The docs don't name the Checkout permission, or say whether inline `price_data` needs Products or Prices permissions.
+- The user signed up at dashboard.stripe.com/register, switched to a sandbox (account picker → Switch to sandbox) and created a restricted key named `pdf-supplier-local`.
+- The live "Assign permissions" screen offered four choices (template / custom / full-except-sensitive / full). Advised **Custom permissions** with Checkout Sessions = Write and everything else None (Q14). Advised **not** to tag it as an agent key, because the server holds it and the agent never does.
+- The user pasted the key into `.env` themselves. The first check found the placeholder still there (the file hadn't been saved). After saving: one `STRIPE_SECRET_KEY` line, starts with `rk_test_`, length 107, no spaces or quotes. The value was never displayed.
+- Pushed `8a6e41a` and `f74b179` on the user's instruction.
+
+### What was built
+- `src/stripe.js`: `fetch`-based Stripe client pinned to `Stripe-Version: 2026-10-28.endive`. Functions: `isTestKey`, `redact` (removes key- and checkout-URL-shaped text), `createCheckoutSession` (with Idempotency-Key, and refuses if `livemode` is true) and `getCheckoutSession`.
+- `src/pdf.js`: hand-written minimal PDF 1.4 (one US-Letter page, Helvetica 24pt). No dependency.
+- `src/store.js`: orders (`prepareCheckout`, `saveOrder`, `getOrderForSession`, `markPaid`) and download tokens (`issueDownload`, which atomically marks the order delivered and stores the token hash; `redeemDownload`, single use).
+- `src/index.js`: rewritten.
+  - New `POST /api/checkout`, `/api/order` and `/api/download`, all through `withSession`.
+  - `GET /download/<token>`: needs the session cookie and the token. Serves `application/pdf`, `Content-Disposition: attachment`.
+  - A per-request test-key guard that answers 503 to everything otherwise.
+- `src/page/app.browser.js`: `create_checkout`, `check_order` and `get_download` added to the post-sign-in tool set. `get_product` now ends with "To buy it, call create_checkout."
+- `scripts/check-env.mjs`, wired as `predev` and `check-env`.
+- `tests/purchase-checks.sh`.
+- Decisions D12 to D16.
+
+### Results
+**PDF:** 596 bytes. `pdftotext` extracts exactly `You now own this PDF.` (`pypdf` isn't installed, so `pdftotext` was the independent check.)
+
+**Startup with the real key:**
+```
+> node scripts/check-env.mjs
+Environment OK: Stripe restricted TEST key found (value not shown).
+> wrangler dev
+[wrangler:info] Ready on http://localhost:8787
+```
+
+**First live Stripe call (test mode):**
+```
+sign_in: 200
+create_checkout HTTP: 200
+ok: true | reused: false | order_id: ord_pkwzp3pkyehmn2yr5z65 | expires_at: 2026-11-13T21:01:48.000Z
+checkout_url: starts with https://checkout.stripe.com/ -> true | contains cs_test_ -> true | length: 407
+create_checkout again (should reuse): reused: true order_id: ord_pkwzp3pkyehmn2yr5z65
+check_order:  {"ok":true,"order_id":"ord_pkwzp3pkyehmn2yr5z65","status":"unpaid","checkout_status":"open"}
+get_download: {"ok":false,"error":"This order is not marked paid yet. Call check_order first; ..."}
+```
+- **Q10 answered:** inline `price_data` works, and **Checkout Sessions: Write alone is enough**.
+- The checkout URL is 407 characters, well within the 1.5K output target.
+- A bug in my own ad-hoc test (Node on Windows can't write to the bash path `/tmp/...`) briefly sent an empty `order_id`. The server correctly answered 400 "order_id is missing or malformed". Re-ran with the ID directly. The saved test script avoids this.
+
+**Refuse-to-start (hard rule 1, as amended by D3):**
+```
+key shape 'sk_live_…' -> exit 1 : STRIPE_SECRET_KEY is a LIVE key. ... Refusing to start.
+key shape 'rk_live_…' -> exit 1 : (same)
+key shape 'pk_test_…' -> exit 1 : must be a Stripe test key starting with rk_test_ (preferred) or sk_test_. Refusing to start.
+key shape 'rk_test_…' (placeholder REPLACE_ME) -> exit 1 : (same)
+key shape '' -> exit 1 : STRIPE_SECRET_KEY is missing from .env. Refusing to start.
+key shape 'sk_test_…' (well-formed fake) -> exit 0 : Environment OK
+npm run dev with a fake LIVE key -> predev prints the LIVE-key error, exit 1, Wrangler never starts
+```
+Bypassing npm with `npx wrangler dev --port 8788 --var STRIPE_SECRET_KEY:sk_live_FAKE…`: `GET /` → 503, `GET /app.js` → 503, `POST /api/sign-in` → 503. Worker log: `REFUSING TO SERVE: STRIPE_SECRET_KEY is missing or is not a Stripe test key`. That server was stopped afterwards.
+
+**Test suites:** `purchase-checks.sh` **19/19**, `tools-checks.sh` **20/20**, `auth-checks.sh` **33/33**. purchase-checks covers:
+- all purchase endpoints and `/download/*` return 401 without a session;
+- a real create, reuse, and check (unpaid/open);
+- `get_download` on an unpaid order → 409;
+- **a second signed-in session can't see or download the first session's order** (404);
+- malformed or missing `order_id` → 400; a bogus token → 404;
+- no Stripe URL or key anywhere in the server log.
+
+### Still to test (needs a payment on Stripe's page, in the browser)
+The paid path (`check_order` → paid, `get_download` → link, PDF download, single use) can't be done from the terminal, because hosted Checkout needs a browser. Handed to the user to do by hand once, as a backend check before the agent run. This is not the Phase 1 pass run, which must have no human clicking.

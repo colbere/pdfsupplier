@@ -72,5 +72,42 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - `POST /api/sign-in` refuses any request whose `Origin` header is another site (403), on top of `SameSite=Strict`.
 - **Reason:** Defence in depth. Each layer is cheap.
 
-## Pending
-- `create_checkout` annotations (brief section 6): to be decided and recorded in Step 5.
+## D12. `create_checkout` annotations: `readOnlyHint: false`, `consequentialHint: false`
+- **Date:** 2026-11-13 (Step 5)
+- **Decision:** Not read-only (it creates an order and a Stripe session), and not consequential.
+- **Alternatives:** `consequentialHint: true`.
+- **Reason:** It spends nothing and can be repeated or abandoned freely: an unpaid Checkout Session just expires. The irreversible step is Stripe's own payment-submit tool, which Stripe marks `consequentialHint`. Marking ours consequential as well would make the extension ask twice for one purchase and dilute the meaning of the hint. Because it isn't read-only, the extension still shows an Allow / Don't allow prompt for it (per its README), unless the user has turned those alerts off.
+- Other Step 5 tools: `check_order` is `readOnlyHint: true` (per the brief; it only records a paid status that Stripe already reports). `get_download` is `readOnlyHint: false, consequentialHint: false` (per the brief).
+
+## D13. Download link: needs the session cookie too; order marked delivered when the link is issued
+- **Date:** 2026-11-13 (Step 5)
+- **Decision:**
+  - `get_download` returns `/download/<token>`: 256-bit random, only its hash stored, single use, expires after 5 minutes.
+  - `GET /download/<token>` **also requires the same signed-in session** that requested the link. A request without it gets 401 and **does not use up** the token.
+  - The order is marked `delivered` when the link is issued, as the brief says, so a second `get_download` for the same order is refused.
+- **Alternatives:** Treat the token alone as enough (a "capability URL"), with no cookie.
+- **Reason:** Hard rule 4: every purchase-related endpoint verifies the session on the server. **Risk:** if the extension fetches the link from a context that doesn't send our `SameSite=Strict` cookie, the download will fail with 401. That would be a useful finding for Q5. Relaxing to token-only is the first fix to try, **and needs the user's OK** because it changes rule 4's application.
+- **Known gap (brief's design):** because "delivered" is set when the link is issued, an agent that can't fetch the link has no way to get another. For Phase 1 this is recorded rather than changed.
+
+## D14. One open order at a time per session; at most 5 orders per session
+- **Date:** 2026-11-13 (Step 5)
+- **Decision:** If the session has an unpaid order whose Stripe page is still valid for more than 2 minutes, `create_checkout` returns that order again (with `reused: true`) instead of creating a new Stripe session. Each session can create at most 5 orders. Stripe create calls use an `Idempotency-Key` (`create-<order_id>`).
+- **Reason:** Agents retry. Chrome's best-practices page recommends rejecting duplicate submissions. The cap bounds how many Stripe sessions one sign-in can create.
+
+## D15. Stripe Checkout Session details
+- **Date:** 2026-11-13 (Step 5)
+- **Decision:**
+  - Hosted Checkout (default `ui_mode`), `mode=payment`, one line item with inline `price_data` (usd, 100 cents, product name "The PDF Supplier: one PDF"), quantity 1.
+  - `success_url` and `cancel_url` are the homepage.
+  - `metadata[order_id]` and `client_reference_id` are both set to the order ID.
+  - `expires_at` is 31 minutes from creation (Stripe's minimum is 30).
+  - Paid means: `payment_status == "paid"` **and** `metadata.order_id` matches **and** the Stripe session ID matches the one stored **and** `livemode == false`.
+  - Any text that might contain a key or Stripe URL is passed through a redaction function before logging. The Stripe URL is never logged.
+- **Reason:** These follow the brief's section 8. The extra ID and livemode checks are cheap and close off mix-ups.
+
+## D16. "Refuse to start" in two layers
+- **Date:** 2026-11-13 (Step 5)
+- **Decision:**
+  1. `npm run dev` runs `scripts/check-env.mjs` first (npm's `predev` hook). Unless the key matches `^(rk|sk)_test_[A-Za-z0-9]{16,}$` (and isn't the placeholder), it exits with an error and Wrangler never starts.
+  2. The Worker checks the same rule on **every request** and answers 503 to everything if it fails.
+- **Reason:** A Worker has no "on startup" hook, and someone could run `npx wrangler dev` directly to skip npm's check. Layer 2 makes the server unusable without a test key either way.

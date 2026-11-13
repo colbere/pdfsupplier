@@ -9,7 +9,14 @@
 //   "fails:global"       -> [timestamps]                failed sign-ins, all clients
 //   "fails:ip:<ip>"      -> [timestamps]                failed sign-ins, per client IP
 //   "killSwitch"         -> true when on
+//   "order:<id>"         -> { sessionHash, stripeSessionId, url, status, createdAt, checkoutExpiresAt }
+//                           status: "created" | "paid" | "delivered"
+//   "sessorders:<hash>"  -> [order ids] created by that app session
+//   "dl:<hash>"          -> { orderId, sessionHash, expiresAt }   single-use download tokens (hash only)
 import { DurableObject } from "cloudflare:workers";
+
+export const MAX_ORDERS_PER_SESSION = 5;
+export const DOWNLOAD_TTL_MS = 5 * 60 * 1000; // download links expire after 5 minutes
 
 export const CODE_TTL_MS = 10 * 60 * 1000;     // codes expire after 10 minutes
 export const SESSION_IDLE_MS = 30 * 60 * 1000; // sessions expire after 30 minutes idle
@@ -127,6 +134,83 @@ export class Store extends DurableObject {
   async endSession(sessionHash) {
     await this.ctx.storage.delete(`session:${sessionHash}`);
     return { ok: true };
+  }
+
+  // ---- Orders ----
+
+  // Before creating a Stripe session: reuse an open unpaid order, or check the per-session cap.
+  // Returns { existing: order+id } | { allowed: true } | { allowed: false, error }
+  async prepareCheckout(sessionHash) {
+    const s = this.ctx.storage;
+    const ids = (await s.get(`sessorders:${sessionHash}`)) || [];
+    const now = Date.now();
+    for (const id of ids.slice().reverse()) {
+      const o = await s.get(`order:${id}`);
+      // Reuse only if still payable for at least 2 more minutes.
+      if (o && o.status === "created" && o.checkoutExpiresAt - now > 2 * 60 * 1000) {
+        return { existing: { orderId: id, ...o } };
+      }
+    }
+    if (ids.length >= MAX_ORDERS_PER_SESSION) {
+      return { allowed: false, error: `This session has reached the limit of ${MAX_ORDERS_PER_SESSION} orders.` };
+    }
+    return { allowed: true };
+  }
+
+  async saveOrder(sessionHash, { orderId, stripeSessionId, url, checkoutExpiresAt }) {
+    const s = this.ctx.storage;
+    const listKey = `sessorders:${sessionHash}`;
+    const ids = (await s.get(listKey)) || [];
+    ids.push(orderId);
+    await s.put({
+      [`order:${orderId}`]: { sessionHash, stripeSessionId, url, status: "created", createdAt: Date.now(), checkoutExpiresAt },
+      [listKey]: ids,
+    });
+  }
+
+  // Returns the order only if it belongs to this session.
+  async getOrderForSession(orderId, sessionHash) {
+    const o = await this.ctx.storage.get(`order:${orderId}`);
+    return o && o.sessionHash === sessionHash ? o : null;
+  }
+
+  async markPaid(orderId) {
+    const s = this.ctx.storage;
+    const o = await s.get(`order:${orderId}`);
+    if (o && o.status === "created") {
+      o.status = "paid";
+      o.paidAt = Date.now();
+      await s.put(`order:${orderId}`, o);
+    }
+  }
+
+  // Atomically: order must belong to session, be paid and not delivered -> mark delivered + store token.
+  async issueDownload(orderId, sessionHash, tokenHash) {
+    const s = this.ctx.storage;
+    const o = await s.get(`order:${orderId}`);
+    if (!o || o.sessionHash !== sessionHash) return { ok: false, reason: "not_found" };
+    if (o.status === "delivered") return { ok: false, reason: "already_delivered" };
+    if (o.status !== "paid") return { ok: false, reason: "not_paid" };
+    const expiresAt = Date.now() + DOWNLOAD_TTL_MS;
+    o.status = "delivered";
+    o.deliveredAt = Date.now();
+    await s.put({
+      [`order:${orderId}`]: o,
+      [`dl:${tokenHash}`]: { orderId, sessionHash, expiresAt },
+    });
+    return { ok: true, expiresAt };
+  }
+
+  // Single use: the token is deleted when redeemed (or found expired).
+  async redeemDownload(tokenHash, sessionHash) {
+    const s = this.ctx.storage;
+    const key = `dl:${tokenHash}`;
+    const d = await s.get(key);
+    if (!d) return { ok: false, reason: "unknown_or_used" };
+    if (d.sessionHash !== sessionHash) return { ok: false, reason: "wrong_session" }; // not deleted
+    await s.delete(key);
+    if (d.expiresAt <= Date.now()) return { ok: false, reason: "expired" };
+    return { ok: true, orderId: d.orderId };
   }
 
   async #deleteAllSessions() {
