@@ -130,3 +130,4 @@ The brief requires the docs to exist from the start, and requires `.env` to be g
 
 ### GitHub
 - The user asked whether Claude could create a GitHub repo. The `gh` CLI is not installed, so the user will create the repo on github.com. Nothing will be pushed until the user explicitly says so (brief section 2).
+- The user created the repo and supplied its URL. Ran `git remote add origin https://github.com/colbere/pdfsupplier.git`. This only records the address locally. **Nothing pushed.**
