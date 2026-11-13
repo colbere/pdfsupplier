@@ -265,3 +265,54 @@ A search of the server log for code-shaped or session-token-shaped strings found
 - DevTools → Application → Cookies showed `__Host-pdfs_session` with HttpOnly, Secure and SameSite=Strict. **Q11 answered: Chrome accepts the Secure + `__Host-` cookie on `http://localhost`.**
 - **Lesson (wording):** the success message says "The store's purchase tools are now available," but in Step 3 no purchase tools exist yet, so the user expected new tools to appear and thought something had failed. Tool output should describe the actual state. It becomes accurate in Step 4, when the page registers those tools on success. This is a small example of what Chrome's best-practices page says: "Only resolve a tool execution with success when the output matches the application state."
 - Outcome: Step 3 verified in the browser.
+
+---
+
+## 2026-11-13 (UTC-7): Step 4, post-sign-in tools (`get_product`, `sign_out`)
+
+Pushed `7e0434e` and `2a8b2ea` to GitHub on the user's instruction.
+
+### What was built
+**Server (`src/index.js`):**
+- `withSession()`: one wrapper for every purchase-related endpoint. It requires POST, refuses a cross-site `Origin` (403) and checks for a valid session (401 with `code: "not_authenticated"`). Steps 5+ reuse it.
+- `POST /api/product`: returns the product (name, price, description, delivery, test-mode note). The product data lives in `PRODUCT` in `src/shared.js` so Stripe will use the same values.
+- `POST /api/sign-out`: deletes the server session if present and always clears the cookie (`Max-Age=0`). Harmless if already signed out.
+- The sign-in success message is now just "Signed in." The page adds the list of tools that were actually registered (lesson from the Step 3 browser check).
+
+**Page script (`src/page/app.browser.js`):**
+- `get_product` (`readOnlyHint: true`) and `sign_out` (`readOnlyHint: false`, `consequentialHint: false`) are registered **only after a successful sign-in**, all with one `AbortController`.
+- **All or nothing:** if any registration fails, the controller is aborted so no partial set is left (Chrome best-practices: "expose either the complete tool surface or none of it").
+- **Removal** (`controller.abort()`) happens on `sign_out`, after 30 minutes without a successful server call (client idle timer matching the server), and whenever any server reply has `code: "not_authenticated"` (for example after the kill switch or a server-side expiry).
+- **On page load** it calls `GET /api/session`. If still signed in, it re-registers the purchase tools.
+- `sign_in` now reports exactly what was added, for example "Signed in. These tools are now available: get_product, sign_out."
+
+### Tests
+`node --check` on the browser script and shared module: OK.
+
+`bash tests/tools-checks.sh`, first run: **19 passed, 1 failed.** The failure was the test's fault: it searched the page for the word "checkout", which the brief's copy legitimately contains ("no checkout for a person to click through"). Fixed the check to look for what rule 3 actually forbids: a Stripe checkout URL (`checkout.stripe.com`, `stripe.com/`, `cs_test_`/`cs_live_`) in the page HTML **or** `app.js`.
+
+Second run: **20 passed, 0 failed**
+```
+== 1. Purchase endpoints refuse requests without a valid session
+  PASS  get_product, no cookie -> 401 (says not_authenticated)
+  PASS  get_product, forged cookie -> 401
+  PASS  get_product, GET instead of POST -> 405
+== 2. Signed in: get_product works
+  PASS  sign in -> 200; get_product with session -> 200; name, price, sentence present
+        body: {"ok":true,"product":{"name":"The PDF Supplier: one PDF","price":"$1.00 USD",
+               "description":"A PDF file containing exactly one sentence: \"You now own this PDF.\"",
+               "delivery":"After payment, a single-use download link that expires in minutes.",
+               "note":"Payments run in Stripe test mode. No real money moves."}}
+  PASS  get_product cross-origin -> 403
+== 3. sign_out ends the session
+  PASS  sign_out cross-origin -> 403, and the session survives it
+  PASS  sign_out -> 200, cookie cleared (Max-Age=0); old cookie -> 401; second sign_out -> 200
+== 4. Kill switch also blocks tool endpoints
+  PASS  get_product before kill -> 200, after kill -> 401
+== 5. Page still clean
+  PASS  no links/buttons/forms/inputs/images; no Stripe checkout URL in page or app.js
+```
+Regression: `bash tests/auth-checks.sh` gives **33 passed, 0 failed**.
+
+### Not testable from the terminal
+The browser-side behaviour (tools appearing after sign-in, surviving a reload, disappearing on sign-out) needs Chrome with WebMCP. Handed to the user for a DevTools check.

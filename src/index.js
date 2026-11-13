@@ -2,7 +2,7 @@
 // Serves the single text-only page, its WebMCP script, the sign-in API and the admin API.
 import PAGE_HTML from "./page/index.html";
 import APP_JS from "./page/app.browser.js";
-import { hashCode, sha256Hex } from "./shared.js";
+import { hashCode, sha256Hex, PRODUCT } from "./shared.js";
 export { Store } from "./store.js";
 
 const SESSION_COOKIE = "__Host-pdfs_session";
@@ -37,7 +37,12 @@ function json(obj, status = 200, extra = {}) {
 
 // Every sign-in failure returns exactly this (see docs/DECISIONS.md D6).
 const SIGN_IN_FAILED = { ok: false, error: "Sign-in failed." };
-const NOT_AUTHENTICATED = { ok: false, error: "Not authenticated. Sign in again with a new one-time code from the store owner." };
+// `code` lets the page recognise this and remove the purchase tools.
+const NOT_AUTHENTICATED = {
+  ok: false,
+  code: "not_authenticated",
+  error: "Not signed in, or the session has expired. Sign in again with a new one-time code from the store owner.",
+};
 
 function store(env) {
   return env.STORE.get(env.STORE.idFromName("main"));
@@ -138,6 +143,38 @@ async function handleAdmin(request, env, pathname) {
   return json({ ok: false, error: "Unknown admin route." }, 404);
 }
 
+// ---- Session-protected tool endpoints ----
+// Every purchase-related endpoint goes through this: same-origin POST + valid session, checked on the server.
+async function withSession(request, env, url, handler) {
+  if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
+  if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
+  if (!(await hasValidSession(request, env))) return json(NOT_AUTHENTICATED, 401);
+  return handler();
+}
+
+function handleProduct() {
+  return json({
+    ok: true,
+    product: {
+      name: PRODUCT.name,
+      price: PRODUCT.priceLabel,
+      description: `A PDF file containing exactly one sentence: "${PRODUCT.contents}"`,
+      delivery: "After payment, a single-use download link that expires in minutes.",
+      note: "Payments run in Stripe test mode. No real money moves.",
+    },
+  });
+}
+
+async function handleSignOut(request, env) {
+  // Always clears the cookie. Deletes the server session if there is one.
+  const token = getCookie(request, SESSION_COOKIE);
+  if (token && token.length >= 40 && token.length <= 60) {
+    await store(env).endSession(await sessionHash(token));
+  }
+  console.log("sign_out");
+  return json({ ok: true, message: "Signed out." }, 200, { "Set-Cookie": clearedSessionCookie() });
+}
+
 // ---- Sign-in ----
 
 async function handleSignIn(request, env, url) {
@@ -154,7 +191,7 @@ async function handleSignIn(request, env, url) {
 
   if (!result.ok) return json(SIGN_IN_FAILED, 401);
   return json(
-    { ok: true, message: "Signed in. The store's purchase tools are now available." },
+    { ok: true, message: "Signed in." }, // the page adds which tools became available
     200,
     { "Set-Cookie": sessionCookie(token) },
   );
@@ -182,6 +219,15 @@ export default {
     if (pathname === "/api/session" && method === "GET") {
       const signedIn = await hasValidSession(request, env);
       return signedIn ? json({ ok: true, signedIn: true }) : json({ ...NOT_AUTHENTICATED, signedIn: false }, 401);
+    }
+
+    if (pathname === "/api/product") {
+      return withSession(request, env, url, () => handleProduct());
+    }
+
+    if (pathname === "/api/sign-out" && method === "POST") {
+      if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
+      return handleSignOut(request, env);
     }
 
     if (pathname.startsWith("/admin/")) {

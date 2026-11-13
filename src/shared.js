@@ -30,6 +30,15 @@ export function normalizeCode(input) {
   return String(input ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
 }
 
+// The one product. Used by get_product now and by Stripe Checkout in Step 5.
+export const PRODUCT = {
+  name: "The PDF Supplier: one PDF",
+  unitAmountCents: 100,
+  currency: "usd",
+  priceLabel: "$1.00 USD",
+  contents: "You now own this PDF.",
+};
+
 export async function sha256Hex(text) {
   const bytes = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
