@@ -141,6 +141,14 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Why limit it to Stripe:** the upstream rule (only exposed subframe tools reach the agent) is a deliberate safety boundary, so an arbitrary iframe such as an ad can't offer tools to the agent. The patch relaxes it only for Stripe frames on Stripe tabs.
 - **For the write-up:** the agent is no longer stock. Runs from run 3 onward use "extension `051a93c` + local patch D20". The underlying question (should agents see tools that a subframe didn't expose to the top origin, and is Stripe's split intended?) is worth raising with Google and/or Stripe. **Not filed: needs the user's OK.**
 
+## D21. Second local patch to the test agent: tool time limit and a result after navigation
+- **Date:** 2026-11-13, after agent run 3. The user asked: "Review the process and make any required fixes."
+- **Decision:** in `extension/sidepanel/services/extensionBridge.ts` (`executeTabTool`):
+  1. **30-second limit** on a page tool's reply. On timeout the model gets an error: "The page's tool "X" did not finish within 30 seconds. It may still have taken effect on the page. Check the current state with another tool before trying it again."
+  2. **After a navigation**, if the cross-document result request fails (the frame is gone) or returns nothing, the model gets: "The tool "X" caused a navigation. The tab is now on `<origin>`. Use the tools available on this page to continue." Before, it got an error or `null`.
+- **Why:** run 3 froze at `fill_payment_form`. Code review also showed that `submit_payment`, which redirects the tab back to our store, would have returned an **error** to the model even after a successful payment. Fix 2 also improves `open_checkout`'s result, which was `null`.
+- **Checks:** typecheck passes; unit tests **209/209**; rebuilt. The cumulative patch (D20 + D21) is 3 files, +139/−12, in `docs/extension-patch.diff`.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

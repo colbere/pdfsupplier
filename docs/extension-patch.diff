@@ -147,3 +147,81 @@ index c2b8221..e8655b1 100644
          tabSessions.update(tabId, {
            tools: [],
            statusMsg: '',
+diff --git a/extension/sidepanel/services/extensionBridge.ts b/extension/sidepanel/services/extensionBridge.ts
+index 8ad5266..3389dbb 100644
+--- a/extension/sidepanel/services/extensionBridge.ts
++++ b/extension/sidepanel/services/extensionBridge.ts
+@@ -145,10 +145,14 @@ export async function executeTabTool(
+ 
+   try {
+     try {
+-      const result = await chromeApi.tabs.sendMessage(
+-        targetTabId,
+-        { action: 'EXECUTE_TOOL', name, inputArgs },
+-        { frameId },
++      // LOCAL PATCH (PDF Supplier experiment): a page tool that never answers used
++      // to freeze the whole agent. Give up after PATCH_TOOL_TIMEOUT_MS and tell the
++      // model, which can check the page's state with another tool.
++      const result = await rejectAfter(
++        chromeApi.tabs.sendMessage(targetTabId, { action: 'EXECUTE_TOOL', name, inputArgs }, { frameId }),
++        PATCH_TOOL_TIMEOUT_MS,
++        `The page's tool "${name}" did not finish within ${PATCH_TOOL_TIMEOUT_MS / 1000} seconds. ` +
++          'It may still have taken effect on the page. Check the current state with another tool before trying it again.',
+       );
+       if (result !== null) return result;
+     } catch (err: unknown) {
+@@ -167,17 +171,48 @@ export async function executeTabTool(
+ 
+     await waitForPageLoad(targetTabId);
+ 
+-    return await chromeApi.tabs.sendMessage(
+-      targetTabId,
+-      { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
+-      // The original frameId only makes sense in the original tab.
+-      { frameId: targetTabId === tabId ? frameId : 0 },
+-    );
++    // LOCAL PATCH: the frame that ran the tool may be gone (e.g. a Stripe iframe
++    // after Checkout redirects the whole tab), and most pages have no JSON-LD
++    // result. Either way, tell the model where the tab is now instead of
++    // returning an error or null.
++    let crossDocumentResult: unknown;
++    try {
++      crossDocumentResult = await chromeApi.tabs.sendMessage(
++        targetTabId,
++        { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
++        // The original frameId only makes sense in the original tab.
++        { frameId: targetTabId === tabId ? frameId : 0 },
++      );
++    } catch {
++      crossDocumentResult = undefined;
++    }
++    if (crossDocumentResult != null && crossDocumentResult !== '') return crossDocumentResult;
++    let where = 'a new page';
++    try {
++      const tab = await chromeApi.tabs.get(targetTabId);
++      if (tab?.url) where = new URL(tab.url).origin;
++    } catch {}
++    return `The tool "${name}" caused a navigation. The tab is now on ${where}. Use the tools available on this page to continue.`;
+   } finally {
+     chromeApi.runtime.onMessage.removeListener(listener);
+   }
+ }
+ 
++// LOCAL PATCH (PDF Supplier experiment): time limit for a single page tool call.
++const PATCH_TOOL_TIMEOUT_MS = 30_000;
++
++async function rejectAfter<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
++  let timerId: ReturnType<typeof setTimeout> | undefined;
++  const timeout = new Promise<never>((_, reject) => {
++    timerId = setTimeout(() => reject(new Error(message)), ms);
++  });
++  try {
++    return await Promise.race([promise, timeout]);
++  } finally {
++    clearTimeout(timerId);
++  }
++}
++
+ async function raceWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | void> {
+   let timerId: ReturnType<typeof setTimeout> | undefined;
+   const timeoutPromise = new Promise<void>((resolve) => {

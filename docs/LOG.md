@@ -531,3 +531,17 @@ Details are in `docs/test-runs/2026-11-13-1428-opus55-run2.md`.
 - 2 files, +94/−2. The diff is saved as `docs/extension-patch.diff`.
 - `npm run typecheck` passed. `npm run test:unit`: **209/209 passed**. `npm run build` OK, reusing the existing auth token, so no server restart was needed.
 - The clone's push URL is still disabled. Nothing is sent upstream.
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 3, then extension patch D21
+
+Run 3 details are in `docs/test-runs/2026-11-13-1540-opus55-run3.md`. With D20, the agent got all six Stripe tools, selected card, and called `fill_payment_form` with complete test details. The call never returned and the user stopped the run.
+
+Fixes (D21, in `extensionBridge.ts`):
+- a 30-second tool timeout with an explanatory error;
+- a navigation note instead of an error or `null` when the frame that ran the tool is gone or the page gives no result.
+
+The second fix pre-empts a failure the code review found: after `submit_payment` redirects the tab to our store, the model would have seen an error even on a successful payment.
+
+`npm run typecheck`: OK. `npm run test:unit`: 209/209. `npm run build`: OK. The diff is updated: 3 files, +139/−12.
