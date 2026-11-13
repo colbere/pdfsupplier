@@ -170,6 +170,16 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Checks:** typecheck passes; unit tests **210/210** (209 upstream + 1 new). Rebuilt; model server restarted. The cumulative patch (D20, D21, D23): 7 source/test files (plus a `package-lock.json` change from `npm install`), in `docs/extension-patch.diff`.
 - **Not verified live yet:** the late-results path. Exercising it would need a real model call in the failure state from run 4.
 
+## D24. The experiment's subject is the WebMCP tools on the owner's own page
+- **Date:** 2026-11-13, after Phase 1 closed. **Stated by the owner:** "I'm less concerned about the agent using the payment page's webmcp tools. This is about the webmcp tools on my own page."
+- **Decision:** what is being tested is whether an agent can complete a purchase through **the store's own WebMCP tools**. Stripe's hosted page and its tools are a means of taking payment, not the subject.
+- **Consequences:**
+  - Phase 1's failures (all on Stripe's page or in the extension) are recorded as obstacles *around* the subject, not failures of it.
+  - **Agentic commerce** (paying through a tool on the store's page) becomes a candidate future track, because it keeps the whole purchase on the store's tools. Kept alongside the Stripe-page route for comparison.
+  - The later "agent without context" test (Stage B) measures what the store's page alone gives an agent.
+- **Owner intent (also stated):** first an agent with full context (Stage A), later one without (Stage B). Keep all documentation of what didn't work.
+- **Plan:** `docs/PLAN.md`, a draft awaiting the owner's confirmation. Nothing built yet.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

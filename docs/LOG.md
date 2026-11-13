@@ -623,3 +623,16 @@ Verification:
   - Q13 (abuse protection once live);
   - whether to report the subframe-tool and `fill_payment_form` behaviour to Google or Stripe (**needs the user's OK**);
   - the custom Claude harness, deployment, the domain, a real $1 charge (brief section 12).
+
+---
+
+## 2026-11-13 (UTC-7): After Phase 1, the owner's goals and a change of focus (no code changes)
+
+Discussion only, until the owner asked for it to be recorded:
+- **Can Phase 1's lessons go on the page so any agent succeeds?** Answer given: partly. Two problems were already fixed on the site (`open_checkout`; card-only, no Link). Two can be helped by factual wording in tool messages, which stays in the agent's conversation after the tab moves to Stripe. Two cannot be fixed from the page: Stripe's iframe-only `fill_payment_form`, and the timing of the extension and Stripe. Caveat: the extension tells the model never to follow instructions in tool results, so the wording must be factual.
+- **Goal stated:** "send an agent to do the entire transaction on its own." Options given: improve the page wording; a custom agent harness (the brief's Phase 2) that handles discovery, waiting, timeouts, step order and a spending rule; agentic commerce; reporting to Google and Stripe.
+- **Owner's sequence:** first an agent with all the context, later one without it.
+- **Owner's interest:** agentic commerce, "could remove a significant amount of friction".
+- **Owner's framing (D24):** the subject is the WebMCP tools on the owner's own page, not the payment page's.
+
+Recorded: `docs/PLAN.md` (plain-language plan, **awaiting owner confirmation**) and D24. All Phase 1 records are kept as they are.

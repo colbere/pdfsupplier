@@ -51,6 +51,7 @@ With the site running: `bash tests/auth-checks.sh` runs the sign-in and lockdown
 
 ## Project documents
 
+- [docs/PLAN.md](docs/PLAN.md): the plan after Phase 1 (draft, awaiting confirmation)
 - [docs/LOG.md](docs/LOG.md): chronological log of everything done
 - [docs/DECISIONS.md](docs/DECISIONS.md): design decisions and why
 - [docs/OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md): what we're trying to find out
