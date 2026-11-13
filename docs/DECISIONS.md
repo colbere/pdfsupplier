@@ -39,5 +39,38 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Alternatives:** Chrome's best-practices page recommends descriptive errors so the model can recover.
 - **Reason:** Specific errors would tell an attacker which codes are close to valid and when the lockout lifts. The brief's section 7 requires a generic error. Every other tool returns specific, helpful errors as Chrome recommends.
 
+## D7. Kill switch is a stored flag, toggled by an admin command
+- **Date:** 2026-11-13 (Step 3)
+- **Decision:** `npm run kill-switch -- on|off|status`. Turning it on stores a flag in the Durable Object and **immediately deletes every session and the active code**. While it's on, sign-in fails, `new-code` is refused, and every session check fails. Turning it off does not bring old sessions back.
+- **Alternatives:** A `KILL_SWITCH` environment variable, which was in the first `.env.example`.
+- **Reason:** The brief allows either. An environment variable only takes effect when the server restarts, and it can't delete sessions at the moment it's switched on. A stored flag acts instantly and would work the same way after deployment (no redeploy needed).
+
+## D8. Codes: 15 characters, one active at a time, SHA-256 hashed
+- **Date:** 2026-11-13 (Step 3)
+- **Decision:** Alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (32 characters, no 0/O/1/I, upper-case only so no l). 15 characters, which is 75 bits, generated with rejection sampling. Shown as `XXXXX-XXXXX-XXXXX`. Input is normalised (case-insensitive, spaces and dashes ignored). Only `SHA-256("pdfs-code:" + code)` is stored. **A new code replaces the previous one**, so at most one code is valid. Expiry is 10 minutes and the code is deleted on first successful use.
+- **Alternatives:** The brief's minimum of 12 characters (60 bits). A slow password hash such as PBKDF2.
+- **Reason:** With only 5 guesses per 15 minutes, 75 bits is far beyond guessable. A slow hash is meant to protect *low-entropy* human passwords, so it adds nothing for a random 75-bit code. One active code keeps the constant-time comparison simple (compare against one stored hash) and limits exposure.
+
+## D9. Admin API protected by a generated `ADMIN_TOKEN`
+- **Date:** 2026-11-13 (Step 3)
+- **Decision:** The terminal commands call `/admin/*` on the local server with `Authorization: Bearer <ADMIN_TOKEN>`. `npm run setup` generates the token (256 bits) into `.env` and never prints it. The server compares SHA-256 digests in constant time. If the token is missing or short, admin routes return 503.
+- **Alternatives:** Have the script write directly into Wrangler's local Durable Object storage files (fragile, and not possible once deployed). Generate the code on the server and return it over HTTP (the code would then travel over the network).
+- **Reason:** Only the **hash** of the code leaves the terminal, so the code itself "never appears anywhere else" (brief section 7). The same mechanism works after deployment.
+
+## D10. `npm run unlock` clears lockouts (small addition to the brief)
+- **Date:** 2026-11-13 (Step 3)
+- **Decision:** An admin command that deletes the failed-attempt counters.
+- **Reason:** The global lockout means a stranger could lock the owner out for 15 minutes on purpose (see Q13). This lets the owner recover immediately. It also lets the tests reset state.
+- **Note:** The brief sets both the per-IP and the global limit at 5 per 15 minutes. With equal limits, the global counter always trips first, so the per-IP limit never independently blocks. It is kept because it matters if the global limit is raised later (Phase 2, Q13).
+
+## D11. Sessions stored as hashes; extra Origin check; `__Host-` cookie
+- **Date:** 2026-11-13 (Step 3)
+- **Decision:**
+  - Session token: 32 random bytes (256 bits), base64url. The server stores only `SHA-256("pdfs-session:" + token)`, so reading the storage doesn't reveal usable tokens.
+  - Cookie: `__Host-pdfs_session=...; Path=/; Secure; HttpOnly; SameSite=Strict`. This is D5 plus the `__Host-` prefix, which makes the browser reject the cookie unless it is Secure, has `Path=/` and has no `Domain`.
+  - No `Max-Age`, so it's a browser-session cookie. The server enforces the 30-minute inactivity limit on every check.
+  - `POST /api/sign-in` refuses any request whose `Origin` header is another site (403), on top of `SameSite=Strict`.
+- **Reason:** Defence in depth. Each layer is cheap.
+
 ## Pending
 - `create_checkout` annotations (brief section 6): to be decided and recorded in Step 5.

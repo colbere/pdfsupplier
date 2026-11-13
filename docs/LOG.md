@@ -173,5 +173,88 @@ GET /nope        -> 404
 GET /api/sign-in -> 404 (wrong method)
 ```
 
-### Chrome check (done by the user)
+### Chrome check (done by the user, reported later the same day)
 - With `chrome://flags/#enable-webmcp-testing` enabled, in Chrome 157: DevTools, then Application, then WebMCP lists **only `sign_in`**, and running it returns "Sign-in failed." **Confirmed by the user.** Test-script step 1 passes for the pre-sign-in state.
+
+---
+
+## 2026-11-13 (UTC-7): Q&A with the user, then Step 3 (real sign-in and lockdown)
+
+### User questions before Step 3
+- **"Where does the code go?"** Explained: `npm run new-code` prints the code in the owner's terminal and sends only its hash to the server. The owner pastes the code into the agent's chat, and the agent passes it to `sign_in`.
+- **"Does Step 3 stop spam once live?"** Explained: it blocks purchases, Stripe session creation (and so card-testing fraud) and code guessing, but not request floods or a deliberate global lockout. Recorded as Q13. Edge rate limiting is for Phase 2.
+- Pushed commit `08ff909` to GitHub on the user's instruction.
+
+### What was built
+- `src/store.js`: the `Store` Durable Object (SQLite-backed, binding `STORE`, migration `v1`). It holds the active code hash, sessions (by token hash), failure timestamps (global and per IP) and the kill-switch flag. Methods: `addCode`, `signIn`, `touchSession`, `endSession`, `setKillSwitch`, `clearLockouts`, `status`.
+- `src/shared.js`: code alphabet and generator, normalisation and SHA-256 helpers. Shared by the server and the Node scripts.
+- `src/index.js`: real `POST /api/sign-in`, `GET /api/session` (page can ask "am I signed in?"), and the admin API `/admin/code`, `/admin/kill-switch`, `/admin/unlock`, `/admin/status`.
+- `scripts/`: `setup.mjs`, `new-code.mjs`, `kill-switch.mjs`, `unlock.mjs` and `lib.mjs`, wired up as `npm run setup | new-code | kill-switch | unlock`.
+- `wrangler.jsonc`: added the Durable Object binding and migration. `package.json`: `"type": "module"` plus the scripts.
+- `.env.example`: replaced `KILL_SWITCH` with an `ADMIN_TOKEN` placeholder (see D7, D9).
+- `tests/auth-checks.sh`: a repeatable test script. It never prints codes or tokens.
+- Design decisions D7 to D11 recorded in DECISIONS.md.
+
+### Bug caught while writing
+- The first version of the code alphabet left out upper-case `L` as well as the look-alikes, giving 31 characters. With a simple "byte mod length" generator, 31 characters would make some characters slightly more likely than others. Fixed: added `L` back (32 characters, 5 bits each), and the generator uses rejection sampling so it stays unbiased for any alphabet size.
+
+### Setup output
+```
+> npm run setup
+Created .env from .env.example.
+Generated a new ADMIN_TOKEN in .env (value not shown).
+```
+`.env` contains `STRIPE_SECRET_KEY` (still the placeholder) and `ADMIN_TOKEN` (43 characters). `git status` does not list `.env` (ignored as intended).
+
+Wrangler restart:
+```
+Using secrets defined in .env
+env.STORE (Store)                       Durable Object            local
+env.STRIPE_SECRET_KEY ("(hidden)")      Environment Variable      local
+env.ADMIN_TOKEN ("(hidden)")            Environment Variable      local
+[wrangler:info] Ready on http://localhost:8787
+```
+Wrangler prints a generic telemetry notice at startup, but `wrangler telemetry status` reports `Disabled (set by wrangler config)`, so `send_metrics: false` works.
+
+### Test results: `bash tests/auth-checks.sh`, **33 passed, 0 failed**
+```
+== 1. Admin API needs the admin token
+  PASS  admin status, no token (got 401)
+  PASS  admin status, wrong token (got 401)
+== 2. Sign-in with no active code fails generically
+  PASS  no code -> 401 / generic error body {"ok":false,"error":"Sign-in failed."}
+== 3. Valid code signs in (typed lower-case, no dashes) and sets a locked-down cookie
+  PASS  valid code -> 200
+        Set-Cookie: __Host-pdfs_session=[REDACTED]; Path=/; Secure; HttpOnly; SameSite=Strict
+  PASS  cookie has __Host- prefix, Path=/, Secure, HttpOnly, SameSite=Strict
+== 4. Session checks
+  PASS  with cookie -> 200 | no cookie -> 401 | forged cookie -> 401
+== 5. Code is single use
+  PASS  reuse same code -> 401
+== 6. Cross-origin request refused
+  PASS  Origin: https://evil.example -> 403; same code still valid from our origin -> 200
+== 7. Lockout after 5 failures (generic error throughout)
+  PASS  wrong code #1..#5 -> 401
+  PASS  CORRECT code while locked -> 401, with an identical error body
+  PASS  different client IP also locked (global) -> 401
+  PASS  after `npm run unlock`, same code works -> 200
+== 8. Kill switch
+  PASS  session valid before kill -> 200
+        Kill switch is ON. Sessions removed: 3. Sign-in is disabled.
+  PASS  both sessions after kill -> 401; new-code refused; sign-in -> 401
+        Kill switch is off. Sign-in works again (old sessions stay invalid).
+  PASS  old session still dead after kill off -> 401; fresh sign-in -> 200
+RESULT: 33 passed, 0 failed
+```
+
+Server log for the run (outcomes only):
+```
+sign_in: success x4 | failed (wrong_code) x5 | failed (no_active_code) x2 | failed (locked_global) x2 | failed (kill_switch) x1
+admin: new code stored x4 | new code refused x1 | kill switch ON x1 | lockouts cleared x8
+```
+A search of the server log for code-shaped or session-token-shaped strings found **0 matches**. No errors.
+
+### Not yet tested
+- **10-minute code expiry** and **30-minute session inactivity** were not tested live, because that means waiting 10 or 30 minutes. The logic is simple timestamp comparisons in `store.js`. To test later, either wait, or temporarily shorten the constants.
+- **Chrome accepting the `__Host-` + `Secure` cookie on `http://localhost` (Q11):** curl received the header, but only a real browser can show whether it stores the cookie. The user will check in DevTools.
+- Per-IP lockout never triggers on its own while both limits are 5 (see D10 note).

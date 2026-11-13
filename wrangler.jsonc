@@ -11,6 +11,13 @@
     { "type": "Text", "globs": ["**/*.browser.js"], "fallthrough": true }
   ],
 
+  // All state (codes, sessions, lockouts, orders) lives in one Durable Object.
+  // See docs/DECISIONS.md D2.
+  "durable_objects": {
+    "bindings": [{ "name": "STORE", "class_name": "Store" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+
   // Don't send anonymous usage data to Cloudflare.
   "send_metrics": false,
 
