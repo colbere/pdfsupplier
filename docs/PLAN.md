@@ -1,6 +1,6 @@
 # Plan after Phase 1
 
-**Status: draft, waiting for the owner to confirm (2026-11-13).**
+**Status: confirmed by the owner (2026-11-13).** "That is all correct."
 Nothing in here has been built yet. What happened in Phase 1, including everything that didn't work, stays in `LOG.md`, `DECISIONS.md`, `OPEN-QUESTIONS.md` and `test-runs/`.
 
 ## What this experiment is about
@@ -23,7 +23,8 @@ Make the messages my tools send back more helpful, using facts rather than comma
 ### 2. Build my own agent, with full context (Stage A)
 - A small program that opens Chrome, reads my page's tools, gives them to Claude, and runs the tools Claude chooses.
 - It gets everything we learned: workarounds for Stripe's and the extension's quirks, waiting for a page's tools to load, time limits, and the right order of steps.
-- Instead of asking me before every payment, it follows a spending rule I set, for example "this agent may spend up to $1, at this store, once".
+- **It runs on its own, with a spending rule only (no confirmation prompt).** For example: "this agent may spend up to $1, at this store, once".
+- **How I use it:** I start it from my terminal, and it comes back with the PDF.
 - **The extra knowledge is kept as a separate layer that can be switched off**, so the same agent can be run without it later.
 - This shows what is possible when the agent knows everything.
 
@@ -31,7 +32,7 @@ Make the messages my tools send back more helpful, using facts rather than comma
 - The same agent with the extra layer switched off, so it only has what my page itself provides.
 - This shows what a stranger's agent would get from my site alone.
 - **Expected:** it may still get stuck on Stripe's page, because those problems aren't on my site. That is still a useful result: it shows which problems a store owner can fix and which need Stripe or the browser agent to change.
-- To decide: which "agent without context" to use (my agent with the layer off, Google's stock extension, or another company's agent), and then keep using the same one so results can be compared over time.
+- **Decided:** "without context" means **my own agent with the extra layer switched off**. The same agent is used every time, so results can be compared over time.
 
 ### 4. Explore agentic commerce (a separate track, later)
 - **Idea:** take payment through my own page instead of sending the agent to Stripe. My page would get a tool such as `pay_order`, which accepts a payment credential the agent has been given. My server charges it through Stripe behind the scenes.
@@ -45,11 +46,11 @@ Make the messages my tools send back more helpful, using facts rather than comma
   - How does the person approve and limit what the agent spends?
   - How does it fit with WebMCP?
 
-## Still planned, unchanged from the brief
-Phase 2 still includes deploying the site to pdfsupplier.com, the Chrome origin-trial token, and one real $1 charge with a spending cap and a confirmation step. Abuse protection for the public site (Q13) has to come before going live.
+## Still planned from the brief
+Phase 2 still includes deploying the site to pdfsupplier.com, the Chrome origin-trial token, and one real $1 charge with a spending cap. **Change from the brief:** the brief's Phase 2 also listed "a confirmation step"; the owner has chosen a **spending rule only** for their agent (D25). Abuse protection for the public site (Q13) has to come before going live.
 
-## Decisions waiting on me
-- [ ] Confirm this plan matches what I intend.
-- [ ] Which agent counts as "without context" for Stage B.
-- [ ] Spending rule only, or spending rule plus a confirmation, for the Stage A agent.
-- [ ] Whether to report the Stripe and extension problems to Stripe and Google (public; not done without my OK).
+## Decisions (made 2026-11-13)
+- [x] The plan matches what I intend.
+- [x] "Without context" (Stage B) = my own agent with the extra layer switched off.
+- [x] My agent uses a **spending rule only**, no confirmation prompt. I start it from the terminal and it returns with the PDF.
+- [x] **Do not report** the Stripe and extension problems to Stripe or Google.

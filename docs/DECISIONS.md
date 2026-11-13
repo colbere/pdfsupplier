@@ -180,6 +180,13 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Owner intent (also stated):** first an agent with full context (Stage A), later one without (Stage B). Keep all documentation of what didn't work.
 - **Plan:** `docs/PLAN.md`, a draft awaiting the owner's confirmation. Nothing built yet.
 
+## D25. Owner's choices for the next phase
+- **Date:** 2026-11-13. **The owner confirmed `docs/PLAN.md` ("that is all correct") and decided:**
+  1. **Stage B's "agent without context"** = the owner's own agent with the extra-knowledge layer switched off (not the stock extension or another vendor's agent).
+  2. **The owner's agent uses a spending rule only**, with no confirmation prompt: "ideally, I dispatch it from my terminal and it returns with the pdf." This **changes the brief's Phase 2**, which listed "spend caps and a confirmation step". The spending rule (amount, store, number of purchases) becomes the safeguard, so it must be enforced by the agent's code, not left to the model.
+  3. **Do not report** the Stripe or extension problems (D20, D21, D23, Q3, Q15) to Stripe or Google.
+- **Supersedes:** the "needs the user's OK" notes about reporting upstream in D20 and in the Phase 1 closing summary: the answer is no.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

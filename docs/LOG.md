@@ -636,3 +636,8 @@ Discussion only, until the owner asked for it to be recorded:
 - **Owner's framing (D24):** the subject is the WebMCP tools on the owner's own page, not the payment page's.
 
 Recorded: `docs/PLAN.md` (plain-language plan, **awaiting owner confirmation**) and D24. All Phase 1 records are kept as they are.
+- **Owner confirmed the plan (2026-11-13)** and decided (D25):
+  - Stage B "without context" = their own agent with the extra layer off;
+  - their agent has a **spending rule only** ("dispatch it from my terminal and it returns with the pdf"), which changes the brief's Phase 2 "confirmation step";
+  - **do not report** problems to Stripe or Google.
+  - `docs/PLAN.md` is marked confirmed.
