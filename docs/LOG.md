@@ -258,3 +258,10 @@ A search of the server log for code-shaped or session-token-shaped strings found
 - **10-minute code expiry** and **30-minute session inactivity** were not tested live, because that means waiting 10 or 30 minutes. The logic is simple timestamp comparisons in `store.js`. To test later, either wait, or temporarily shorten the constants.
 - **Chrome accepting the `__Host-` + `Secure` cookie on `http://localhost` (Q11):** curl received the header, but only a real browser can show whether it stores the cookie. The user will check in DevTools.
 - Per-IP lockout never triggers on its own while both limits are 5 (see D10 note).
+
+### Browser check of Step 3 (done by the user)
+- The user generated a code with `npm run new-code` and ran `sign_in` from the DevTools WebMCP pane.
+- Server log: `sign_in: success`. A second run with the same code gave `failed (no_active_code)` (single use working). A later new code gave `success` again.
+- DevTools → Application → Cookies showed `__Host-pdfs_session` with HttpOnly, Secure and SameSite=Strict. **Q11 answered: Chrome accepts the Secure + `__Host-` cookie on `http://localhost`.**
+- **Lesson (wording):** the success message says "The store's purchase tools are now available," but in Step 3 no purchase tools exist yet, so the user expected new tools to appear and thought something had failed. Tool output should describe the actual state. It becomes accurate in Step 4, when the page registers those tools on success. This is a small example of what Chrome's best-practices page says: "Only resolve a tool execution with success when the output matches the application state."
+- Outcome: Step 3 verified in the browser.
