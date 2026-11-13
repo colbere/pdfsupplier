@@ -149,6 +149,15 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Why:** run 3 froze at `fill_payment_form`. Code review also showed that `submit_payment`, which redirects the tab back to our store, would have returned an **error** to the model even after a successful payment. Fix 2 also improves `open_checkout`'s result, which was `null`.
 - **Checks:** typecheck passes; unit tests **209/209**; rebuilt. The cumulative patch (D20 + D21) is 3 files, +139/−12, in `docs/extension-patch.diff`.
 
+## D22. Checkout is card-only, with Link turned off
+- **Date:** 2026-11-13, after agent run 4. The user asked for fixes. The user also spotted the "Save my information / Mobile number" section and suspected it.
+- **Decision:** Checkout Sessions are created with `allowed_payment_method_types[0]=card` and `wallet_options[link][display]=never`.
+- **Verified:** a test session created with these settings reads back `payment_method_types: ["card"]`, `allowed_payment_method_types: ["card"]`, `wallet_options: {"link":{"display":"never"}}`, `phone_number_collection: {"enabled":false}`, `livemode: false`. `purchase-checks.sh` gives 26/26.
+- **Alternatives:**
+  - `payment_method_types=["card"]`: **rejected by the docs.** "Starting with API version `2026-09-30.endive`, you can't pass `payment_method_types`…" (we pin `2026-10-28.endive`).
+  - Turning Link off in the Dashboard: it works too, but it is an account setting outside the code, and not reproducible from the repo.
+- **Reason:** Link's opt-in added a required phone field that no agent tool fills, which blocked payment in run 4. The brief only calls for a test card. Card-only also removes the Cash App and Klarna choices, so the agent has a simpler form.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

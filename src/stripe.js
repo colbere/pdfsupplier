@@ -57,6 +57,12 @@ export async function createCheckoutSession(env, { orderId, origin }) {
     "line_items[0][quantity]": "1",
     success_url: `${origin}/`,
     cancel_url: `${origin}/`,
+    // Card only, and no Link: Link's "save my information" opt-in added a required
+    // phone-number field that blocked agent run 4 (see DECISIONS D22). With API
+    // 2026-09-30.endive+ `payment_method_types` is no longer accepted; these are the
+    // documented replacements.
+    "allowed_payment_method_types[0]": "card",
+    "wallet_options[link][display]": "never",
     client_reference_id: orderId,
     "metadata[order_id]": orderId,
     expires_at: String(expiresAt),

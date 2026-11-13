@@ -545,3 +545,17 @@ Fixes (D21, in `extensionBridge.ts`):
 The second fix pre-empts a failure the code review found: after `submit_payment` redirects the tab to our store, the model would have seen an error even on a successful payment.
 
 `npm run typecheck`: OK. `npm run test:unit`: 209/209. `npm run build`: OK. The diff is updated: 3 files, +139/−12.
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 4, then Checkout made card-only without Link (D22)
+
+Run 4 details are in `docs/test-runs/2026-11-13-1556-opus55-run4.md`.
+- D21 worked: there was a navigation note and the timeout was recovered from.
+- The agent asked before paying and submitted on "yes".
+- Stripe showed "Your phone number is incomplete", from Link's save-info opt-in.
+- The agent called `check_order` while still on Stripe, then the extension's server lost the chat (409, cause not determined).
+
+Fix D22:
+- Docs check: `payment_method_types` is not allowed on API `2026-09-30.endive` and later. The documented replacements are `allowed_payment_method_types` and `wallet_options.link.display=never`.
+- Added both to `createCheckoutSession`. A test session read back `payment_method_types ["card"]`, Link `never`, `phone_number_collection.enabled false`. `purchase-checks.sh` 26/26.
