@@ -16,3 +16,6 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Downloaded PDFs (test downloads may land in this folder)
+*.pdf

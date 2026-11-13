@@ -404,3 +404,23 @@ Bypassing npm with `npx wrangler dev --port 8788 --var STRIPE_SECRET_KEY:sk_live
 
 ### Still to test (needs a payment on Stripe's page, in the browser)
 The paid path (`check_order` → paid, `get_download` → link, PDF download, single use) can't be done from the terminal, because hosted Checkout needs a browser. Handed to the user to do by hand once, as a backend check before the agent run. This is not the Phase 1 pass run, which must have no human clicking.
+
+### Manual paid-path check (done by the user in Chrome, by hand; not the agent run)
+- The user signed in through DevTools; all six tools appeared. They also ran `get_product` unprompted, and it worked.
+- `create_checkout` returned order `ord_uzc8ag5vk2gb59fs4vxg` and a Stripe URL, which the user opened in a new tab.
+- **Stripe's sandbox Checkout page lists six WebMCP tools in DevTools:** `fill_payment_form`, `get_link_pay_token_merchant`, `get_order_summary`, `select_payment_method`, `set_link_pay_token`, `submit_payment`. Details are in Q3. The DevTools panel did **not** show the tools' annotations to the user, so which tool is marked consequential is still unobserved.
+- The user paid by hand with 4242 4242 4242 4242 / 12/34 / 123 and was redirected to the homepage.
+- Server log (download token redacted):
+```
+create_checkout: order ord_uzc8ag5vk2gb59fs4vxg created
+check_order: ord_uzc8ag5vk2gb59fs4vxg stripe=complete/paid -> paid
+get_download: ord_uzc8ag5vk2gb59fs4vxg -> link issued, order delivered
+download: served PDF for ord_uzc8ag5vk2gb59fs4vxg
+[wrangler:info] GET /download/[REDACTED] 200 OK (192ms)
+get_download: ord_uzc8ag5vk2gb59fs4vxg -> already_delivered
+```
+- The user reports every tool worked as intended and the PDF downloaded.
+- A search of the server log for Stripe URLs or keys found **0 matches**.
+- **Gap, stated plainly:** the server received only **one** request for the download link. Reopening the link did not reach the server: either it wasn't reopened, or Chrome served it from its download history. So **single-use of the download link has not yet been observed on a real paid order.** (The code deletes the token on first redemption, and the tests show unknown or used tokens get 404.) Re-check during the agent run.
+
+**Outcome:** the backend purchase flow works end to end in Stripe test mode: sign-in → checkout → Stripe payment → paid check → single-use download → PDF. Step 5 complete.
