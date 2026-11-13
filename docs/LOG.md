@@ -574,3 +574,29 @@ Fix D23:
 - The server turns late tool results into a note instead of a 409 for a chat that still exists.
 - My first version of the settle change **failed the new unit test** (it returned without the quiet period once tools arrived late). Fixed.
 - typecheck OK, unit tests **210/210**, rebuilt, model server restarted ("Answering with anthropic:claude-opus-5-5").
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 6, **first complete purchase**; Phase 1 pass assessment
+
+Run 6 details are in `docs/test-runs/2026-11-13-1614-opus55-run6.md`. From sign-in to a saved PDF took about 2.5 minutes. Human input: one "yes" in the chat, plus the extension's Allow prompts. **No clicks on either page.**
+
+Verification:
+- Server log: `stripe=complete/paid -> paid`, then `link issued, order delivered`, then `served PDF`.
+- File `you-now-own-this (1).pdf`: 596 bytes, `pdftotext` = "You now own this PDF."
+- Fresh negative checks: auth **33/33**, tools **20/20**, purchase **26/26**. `check-env` refuses `sk_live_`, `rk_test_REPLACE_ME` and `pk_test_`.
+
+### Phase 1 pass condition (brief section 11): assessment
+| # | Condition | Result |
+|---|---|---|
+| 1 | Agent finds the tools and signs in with a one-time code | **Met** (every run) |
+| 2 | Creates a checkout, pays with the test card, server confirms `paid` | **Met in run 6.** It needed: our `open_checkout` (D18), card-only/no-Link Checkout (D22), and **local patches to the test agent** (D20, D21, D23) |
+| 3 | Receives the download and retrieves the PDF containing exactly the sentence | **Met in run 6**, via `get_download` saving the file (D19). The model did not read the text itself |
+| 4 | Negative checks: no purchase tool works without a valid session; a wrong or reused code fails; lockout; kill switch; refuses a non-test key | **Met** (79 checks + 3 refuse-to-start cases, re-run after run 6) |
+| — | "No human clicking on the page" | **Met.** The human input was a chat "yes" and extension Allow prompts |
+
+**Caveats for the write-up:**
+- The stock extension cannot complete this purchase. Three local patches were required (D20, D21, D23; 7 files, `docs/extension-patch.diff`).
+- Stripe's `fill_payment_form` never resolves.
+- The approval was given before the form was filled and was carried over to `submit_payment`.
+- The empty tool list after navigation persisted in run 6 (possibly the extension was not reloaded after D23; to confirm).
