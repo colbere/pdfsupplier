@@ -131,3 +131,47 @@ The brief requires the docs to exist from the start, and requires `.env` to be g
 ### GitHub
 - The user asked whether Claude could create a GitHub repo. The `gh` CLI is not installed, so the user will create the repo on github.com. Nothing will be pushed until the user explicitly says so (brief section 2).
 - The user created the repo and supplied its URL. Ran `git remote add origin https://github.com/colbere/pdfsupplier.git`. This only records the address locally. **Nothing pushed.**
+- The user then said "push". Ran `git push -u origin main`, which pushed the 2 commits. No credential prompt appeared.
+
+---
+
+## 2026-11-13 (UTC-7): Step 2, the text-only page and the `sign_in` tool
+
+### What was done
+1. Created `package.json` with one script, `npm run dev` (runs `wrangler dev`).
+2. `npm install --save-dev wrangler`: installed **Wrangler 4.162.0** locally (37 packages, "found 0 vulnerabilities"). npm also printed a notice that a newer npm exists. That would be a global update, so it was skipped.
+3. Created `wrangler.jsonc`: entry `src/index.js`, `compatibility_date` 2026-11-01, local dev on `localhost:8787`, `send_metrics: false` (no anonymous usage data sent to Cloudflare), and a rule so `*.browser.js` files are imported as text.
+4. Created the site:
+   - `src/page/index.html`: semantic HTML with one `h1`, the tagline and three paragraphs, using the brief's copy as written. Minimal inline CSS (centered, narrow column, serif type, light/dark aware). No links, buttons, forms, inputs or images.
+   - `src/page/app.browser.js`: feature-detects `document.modelContext` and does nothing without it. Registers **only `sign_in`** (annotations `readOnlyHint: false`, `consequentialHint: false`, `untrustedContentHint: false`). It POSTs the code to `/api/sign-in` and returns the server's text.
+   - `src/index.js` (the Worker): serves `/` and `/app.js`, a placeholder `POST /api/sign-in` that always returns the generic failure, and 404 for everything else.
+5. Started `npx wrangler dev`.
+
+### Design notes (why)
+- **Script served as `/app.js`, not inline:** this allows a strict Content Security Policy (`script-src 'self'`) without hashes or nonces. The page is still the only *page*. `/app.js` is a resource the page loads. The CSP also sets `form-action 'none'`, `frame-ancestors 'none'`, `connect-src 'self'` and `default-src 'none'`.
+- **Other headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
+- **Placeholder sign-in:** it lets the tool be exercised in DevTools before the real logic exists.
+
+### Output
+`wrangler dev` startup (trimmed): no login prompt. **Q9 answered: local dev needs no Cloudflare account.**
+```
+wrangler 4.162.0
+Starting local server...
+Wrangler detected this dev session is running in an AI agent.
+[...list of Local Explorer API routes...]
+[wrangler:info] Ready on http://localhost:8787
+```
+
+Checks with curl:
+```
+GET /            -> 200 text/html; CSP, nosniff, no-referrer, no-store present
+forbidden tags (a/button/form/input/select/textarea/iframe/img) -> none found
+h1 count         -> 1
+GET /app.js      -> 200 text/javascript
+POST /api/sign-in {"code":"anything"} -> 401 {"ok":false,"error":"Sign-in failed."}
+GET /nope        -> 404
+GET /api/sign-in -> 404 (wrong method)
+```
+
+### Still to check (needs the user, in Chrome)
+- With `chrome://flags/#enable-webmcp-testing` enabled: DevTools, then Application, then WebMCP should list **only `sign_in`**. Running it should return "Sign-in failed."

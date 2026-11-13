@@ -1,0 +1,21 @@
+// Wrangler settings for The PDF Supplier (Phase 1: local only, never deployed).
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pdf-supplier",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+
+  // Import the page HTML and the browser script as plain text strings
+  // so the Worker can serve them. (.html is text by default; .browser.js is not.)
+  "rules": [
+    { "type": "Text", "globs": ["**/*.browser.js"], "fallthrough": true }
+  ],
+
+  // Don't send anonymous usage data to Cloudflare.
+  "send_metrics": false,
+
+  "dev": {
+    "port": 8787,
+    "ip": "localhost"
+  }
+}

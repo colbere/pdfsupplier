@@ -19,7 +19,7 @@ Status values: **Open**, **Answered**, **Partly answered**.
 |---|---|---|---|
 | Q7 | Is `navigator.modelContext` officially deprecated? | Open | Chrome docs only use `document.modelContext` and don't mention `navigator.modelContext`. Not blocking: we use `document.modelContext`. |
 | Q8 | Can a new Stripe account use test mode or a sandbox before activation? | Open | Not stated on the pages read. The Stripe CLI can make an anonymous sandbox without registration. Confirm in Step 5. |
-| Q9 | Does `wrangler dev` (purely local) require a Cloudflare login? | Open | Docs don't say. Find out in Step 2. Ask the user before creating any account. |
+| Q9 | Does `wrangler dev` (purely local) require a Cloudflare login? | **Answered** | **No.** Wrangler 4.162.0 started and served `http://localhost:8787` with no login prompt and no Cloudflare account (2026-11-13, Step 2). |
 | Q10 | Does inline `price_data` on Checkout Session create work as expected with API version `2026-10-28.endive`? | Open | Not shown on the API page read. Verify in Step 5. |
 | Q11 | Does Chrome accept the `Secure` session cookie on `http://localhost`? | Open | MDN says yes. Confirm in DevTools in Step 3. |
 | Q12 | Do tools registered after sign-in reach the extension mid-conversation? | Open | The README says tools that appear during a conversation are "picked up before the next model turn" (via `toolchange`). Confirm in the agent test. |

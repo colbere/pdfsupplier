@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The PDF Supplier</title>
+<meta name="description" content="An experiment in whether an AI agent can buy something using only WebMCP tools.">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 36rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.125rem;
+    line-height: 1.65;
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 0.25rem; text-align: center; }
+  .tagline { font-style: italic; text-align: center; margin: 0 0 2.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The PDF Supplier</h1>
+  <p class="tagline">Why make a PDF at home when you can get one here?</p>
+
+  <p>The PDF Supplier is not a real business. It's an experiment in whether an AI agent can find a store, prove who it's acting for, pay, and take delivery using only the tools this page publishes through WebMCP, a new browser standard proposed by Chrome. There's no cart, no buttons and no checkout for a person to click through. If you're reading this, you're seeing everything a human gets.</p>
+
+  <p>There is one product: a PDF that contains a single sentence, for $1. The only tool visible to the public is a sign-in. The purchase tools appear only after the site's owner signs in with a one-time code, so no one else can buy anything. Payments run through Stripe in test mode, so no real money moves.</p>
+
+  <p>WebMCP is new, and it's changing quickly. I couldn't find much about what happens when an agent actually tries to buy something with it, so I'm finding out. I'll write up what works and what breaks.</p>
+</main>
+<script src="/app.js" defer></script>
+</body>
+</html>
