@@ -173,5 +173,5 @@ GET /nope        -> 404
 GET /api/sign-in -> 404 (wrong method)
 ```
 
-### Still to check (needs the user, in Chrome)
-- With `chrome://flags/#enable-webmcp-testing` enabled: DevTools, then Application, then WebMCP should list **only `sign_in`**. Running it should return "Sign-in failed."
+### Chrome check (done by the user)
+- With `chrome://flags/#enable-webmcp-testing` enabled, in Chrome 157: DevTools, then Application, then WebMCP lists **only `sign_in`**, and running it returns "Sign-in failed." **Confirmed by the user.** Test-script step 1 passes for the pre-sign-in state.
