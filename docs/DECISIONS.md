@@ -105,6 +105,31 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - Any text that might contain a key or Stripe URL is passed through a redaction function before logging. The Stripe URL is never logged.
 - **Reason:** These follow the brief's section 8. The extra ID and livemode checks are cheap and close off mix-ups.
 
+## D18. New tool `open_checkout`: the page moves the tab to Stripe (changes the brief's six tools to seven)
+- **Date:** 2026-11-13, after agent run 1. **Approved by the user.**
+- **Decision:**
+  - `open_checkout(order_id)` (sign-in only; `readOnlyHint: false`, `consequentialHint: false`).
+  - It asks the server, through the session check, for the order's Stripe URL. The order must belong to this session, be unpaid and not be expired.
+  - The page then runs `window.location.assign(url)` and leaves the tool's promise unresolved.
+  - `create_checkout` still returns the URL (as the brief says), and its "Next" hint now points to `open_checkout`.
+- **Why it works:** the extension has no navigation ability of its own (run 1), but `executeTabTool` handles a tool that navigates. When the message channel closes, it waits for the new document, its content script, its tools and page load, then carries the conversation on there ("A tool can also open a tab of its own, and the flow then carries on there"). Stripe's hosted page then publishes its own WebMCP tools (Q3).
+- **Rule 3 check:** the URL is still never in our page's HTML or DOM. The navigation happens in script, only for a signed-in session's own order.
+- **Alternatives (shown to the user):**
+  - Stripe Embedded Checkout: rejected, because it puts a human-usable payment form on our page (rule 3) and its WebMCP behaviour differs.
+  - Stop and record: rejected by the user.
+  - `window.open` to a new tab: not chosen, because popups without a user gesture are likely to be blocked.
+- **Open risk:** after navigation the extension asks the new page for a "cross-document result" (JSON-LD), which Stripe's page won't have, so the model may see an empty result for `open_checkout`. The extension's system prompt tells it to continue with newly available tools.
+
+## D19. `get_download` saves the PDF itself
+- **Date:** 2026-11-13, after agent run 1. **Approved by the user** ("get_download starts it").
+- **Decision:**
+  - `get_download` still gets the single-use link from the server.
+  - The page then immediately `fetch`es it (same origin, with the session cookie), checks that the file starts with `%PDF-`, and saves it via a detached `<a download>` pointing at a local `blob:` URL. Nothing is added to the page and there is no navigation.
+  - The tool reports the byte count and that the file was saved.
+  - **Difference from what the user was shown:** the user's option said `get_download` would "still return the link". Because the link is single-use, fetching it uses it up, so on success the tool says it was used instead of returning a dead link. If the automatic save fails, the tool returns the (still unused) link as before.
+- **Why:** the extension can't open links (run 1), so a returned link alone would leave the PDF undelivered. It also fixes most of D13's "known gap", because the link is used in the same step that marks the order delivered.
+- **What it means for Q5:** the PDF reaches the owner's Downloads folder through the agent's tool call, but the *model* never sees the file's contents. It only sees the confirmation and the size.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

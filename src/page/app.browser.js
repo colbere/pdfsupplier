@@ -29,6 +29,29 @@
 
   const UNREACHABLE = "Could not reach the store's server. Try again shortly.";
 
+  // Fetches the PDF (same-origin, with the session cookie) and hands it to the browser as a download.
+  // The temporary <a> is never attached to the page, and its href is a local blob: URL, not the link.
+  async function savePdf(downloadUrl) {
+    try {
+      const u = new URL(downloadUrl, location.href);
+      if (u.origin !== location.origin || !u.pathname.startsWith("/download/")) return { ok: false, error: "unexpected link" };
+      const res = await fetch(u.pathname, { credentials: "same-origin" });
+      if (!res.ok) return { ok: false, error: `server answered ${res.status}` };
+      const blob = await res.blob();
+      const head = new TextDecoder().decode(await blob.slice(0, 5).arrayBuffer());
+      if (head !== "%PDF-") return { ok: false, error: "the file is not a PDF" };
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = "you-now-own-this.pdf";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      return { ok: true, bytes: blob.size };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || "network error" };
+    }
+  }
+
   // ---------- Purchase tools (only while signed in) ----------
 
   let purchaseCtl = null; // AbortController for every post-sign-in tool
@@ -66,7 +89,7 @@
             `What it is: ${p.description}`,
             `Delivery: ${p.delivery}`,
             p.note,
-            "To buy it, call create_checkout.",
+            "To buy it: create_checkout, then open_checkout to pay on Stripe's page, then check_order and get_download.",
           ].join("\n");
         } catch {
           return UNREACHABLE;
@@ -90,11 +113,43 @@
             `order_id: ${data.order_id}`,
             `Stripe checkout URL: ${data.checkout_url}`,
             `The checkout page expires at ${data.expires_at}.`,
-            "Next: open the checkout URL and pay there. Then call check_order with this order_id.",
+            "Next: call open_checkout with this order_id. It takes this tab to the Stripe page, where Stripe's own tools let you pay. " +
+              "After payment Stripe returns to this store; then call check_order with this order_id.",
           ].join("\n");
         } catch {
           return UNREACHABLE;
         }
+      },
+    },
+    {
+      name: "open_checkout",
+      description:
+        "Takes this browser tab to the Stripe checkout page for an unpaid order, so you can pay there " +
+        "using the Stripe page's own tools. Takes the order_id from create_checkout. The tab leaves the store; " +
+        "after payment Stripe returns to the store and its tools come back. Requires being signed in.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          order_id: { type: "string", description: "The order_id returned by create_checkout (starts with ord_)." },
+        },
+        required: ["order_id"],
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+      async execute({ order_id } = {}) {
+        let data;
+        try {
+          ({ data } = await callServer("/api/open-checkout", { body: { order_id } }));
+        } catch {
+          return UNREACHABLE;
+        }
+        if (!data || !data.ok) return (data && data.error) || "Could not open the checkout page.";
+        const url = String(data.checkout_url || "");
+        if (!url.startsWith("https://checkout.stripe.com/")) return "The store returned an invalid checkout address.";
+        // Navigate this tab by script (the URL is never written into the page). The WebMCP
+        // extension treats a tool that navigates as "carry on with the new page's tools".
+        // This promise intentionally never resolves: the document is about to unload.
+        window.location.assign(url);
+        return new Promise(() => {});
       },
     },
     {
@@ -129,9 +184,9 @@
     {
       name: "get_download",
       description:
-        "Gets a download link for the PDF of a paid order. Takes the order_id. The link works once, " +
-        "expires in 5 minutes and needs this same signed-in browser session. Marks the order delivered, " +
-        "so it can only be called once per order. Call check_order first. Requires being signed in.",
+        "Delivers the PDF of a paid order: gets a single-use download link and immediately saves the file " +
+        "to this browser's Downloads folder. Takes the order_id. Marks the order delivered, so it works " +
+        "once per order. Call check_order first. Requires being signed in.",
       inputSchema: {
         type: "object",
         properties: {
@@ -144,10 +199,20 @@
         try {
           const { data } = await callServer("/api/download", { body: { order_id } });
           if (!data || !data.ok) return (data && data.error) || "Could not get the download link.";
+
+          // Use the single-use link right away to save the file (no navigation, nothing added to the page).
+          const saved = await savePdf(data.download_url);
+          if (saved.ok) {
+            return [
+              `Order ${data.order_id} is delivered.`,
+              `The PDF was downloaded (${saved.bytes} bytes, a valid PDF file) and saved to this browser's Downloads folder as you-now-own-this.pdf.`,
+              "The single-use download link has now been used.",
+            ].join("\n");
+          }
+          // Automatic save failed: hand back the (still unused) link instead.
           return [
-            `Order ${data.order_id} is delivered.`,
-            `Download link (single use, expires ${data.expires_at}): ${data.download_url}`,
-            'The file is a PDF named you-now-own-this.pdf containing the sentence "You now own this PDF."',
+            `Order ${data.order_id} is delivered, but the automatic download failed (${saved.error}).`,
+            `Single-use download link (expires ${data.expires_at}, needs this signed-in browser): ${data.download_url}`,
           ].join("\n");
         } catch {
           return UNREACHABLE;

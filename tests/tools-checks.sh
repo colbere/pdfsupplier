@@ -53,7 +53,8 @@ curl -s "$B/" > /tmp/pdfs_page
 grep -ioqE '<(a|button|form|input|select|textarea|iframe|img)[ >]' /tmp/pdfs_page && bad "page has interactive/visual elements" || ok "page has no links/buttons/forms/inputs/images"
 # Rule 3: no checkout URL in the page or its script. (The word "checkout" is fine: the copy uses it.)
 curl -s "$B/app.js" >> /tmp/pdfs_page
-grep -oqiE 'checkout\.stripe\.com|stripe\.com/|cs_(test|live)_' /tmp/pdfs_page && bad "page or app.js contains a Stripe checkout URL" || ok "no Stripe checkout URL in page HTML or app.js"
+# (app.js may contain the bare prefix "https://checkout.stripe.com/" as a validation check; that is not a payment link.)
+grep -oqiE 'checkout\.stripe\.com/c/|cs_(test|live)_' /tmp/pdfs_page && bad "page or app.js contains a Stripe checkout session URL" || ok "no Stripe checkout session URL in page HTML or app.js"
 
 npm run --silent unlock >/dev/null; rm -f "$JAR" /tmp/pdfs_body /tmp/pdfs_hdr /tmp/pdfs_page
 echo ""

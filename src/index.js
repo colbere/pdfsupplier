@@ -242,6 +242,26 @@ async function handleCheckOrder(request, env, sh) {
   return json({ ok: true, order_id: orderId, status: paid ? "paid" : (cs.status === "expired" ? "expired" : "unpaid"), checkout_status: cs.status });
 }
 
+// open_checkout: returns the Stripe URL of an unpaid, unexpired order owned by this session,
+// so the page can move the tab there by script. The URL is never written into the page.
+async function handleOpenCheckout(request, env, sh) {
+  const orderId = await readOrderId(request);
+  if (!orderId) return json({ ok: false, error: "order_id is missing or malformed. It looks like ord_ followed by 20 characters." }, 400);
+  const order = await store(env).getOrderForSession(orderId, sh);
+  if (!order) return json(NO_SUCH_ORDER, 404);
+  if (order.status !== "created") {
+    return json({ ok: false, error: `Order ${orderId} is already paid. Call check_order, then get_download.` }, 409);
+  }
+  if (order.checkoutExpiresAt <= Date.now() + 60 * 1000) {
+    return json({ ok: false, error: `The checkout page for ${orderId} has expired. Call create_checkout to start a new order.` }, 410);
+  }
+  if (typeof order.url !== "string" || !order.url.startsWith("https://checkout.stripe.com/")) {
+    return json({ ok: false, error: "No valid Stripe checkout URL is stored for this order." }, 500);
+  }
+  console.log(`open_checkout: ${orderId} -> navigating to Stripe`); // never log the URL
+  return json({ ok: true, order_id: orderId, checkout_url: order.url });
+}
+
 async function handleGetDownload(request, env, url, sh) {
   const orderId = await readOrderId(request);
   if (!orderId) return json({ ok: false, error: "order_id is missing or malformed. It looks like ord_ followed by 20 characters." }, 400);
@@ -349,6 +369,7 @@ export default {
 
     if (pathname === "/api/product") return withSession(request, env, url, () => handleProduct());
     if (pathname === "/api/checkout") return withSession(request, env, url, (sh) => handleCreateCheckout(env, url, sh));
+    if (pathname === "/api/open-checkout") return withSession(request, env, url, (sh) => handleOpenCheckout(request, env, sh));
     if (pathname === "/api/order") return withSession(request, env, url, (sh) => handleCheckOrder(request, env, sh));
     if (pathname === "/api/download") return withSession(request, env, url, (sh) => handleGetDownload(request, env, url, sh));
 

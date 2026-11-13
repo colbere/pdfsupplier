@@ -11,14 +11,16 @@ expect() { if [ "$2" = "$3" ]; then ok "$1 (got $3)"; else bad "$1 (wanted $2, g
 has()    { if grep -q -- "$2" /tmp/pdfs_body; then ok "$1"; else bad "$1 (body: $(cat /tmp/pdfs_body))"; fi; }
 newcode() { npm run --silent new-code 2>&1 | grep -oE '[2-9A-Z]{5}-[2-9A-Z]{5}-[2-9A-Z]{5}'; }
 signin()  { npm run --silent unlock >/dev/null; curl -s -o /dev/null -c "$1" -X POST -H 'Content-Type: application/json' -d "{\"code\":\"$(newcode)\"}" "$B/api/sign-in"; }
-post() { local jar="$1" path="$2" body="${3:-{\}}"; curl -s -o /tmp/pdfs_body -w "%{http_code}" -b "$jar" -X POST -H 'Content-Type: application/json' -d "$body" "$B$path"; }
+post() { # post <jar> <path> [body] [extra curl args...]
+  local jar="$1" path="$2" body="${3:-{\}}"; shift 2; [ $# -gt 0 ] && shift
+  curl -s -o /tmp/pdfs_body -w "%{http_code}" -b "$jar" -X POST -H 'Content-Type: application/json' -d "$body" "$@" "$B$path"; }
 JA=$(mktemp); JB=$(mktemp); NOJAR=$(mktemp)
 
 npm run --silent kill-switch -- off >/dev/null
 signin "$JA"; signin "$JB"
 
 echo "== 1. Purchase endpoints need a session"
-for p in /api/checkout /api/order /api/download; do expect "$p without session -> 401" 401 "$(post "$NOJAR" $p)"; done
+for p in /api/checkout /api/open-checkout /api/order /api/download; do expect "$p without session -> 401" 401 "$(post "$NOJAR" $p)"; done
 expect "GET /download/<random> without session -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' "$B/download/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")"
 
 echo "== 2. create_checkout (real Stripe test call)"
@@ -28,6 +30,14 @@ OID=$(grep -oE 'ord_[a-z2-9]{20}' /tmp/pdfs_body | head -1)
 grep -qE '"checkout_url":"https://checkout\.stripe\.com/[^"]*cs_test_' /tmp/pdfs_body && ok "checkout_url is a Stripe TEST checkout URL (not shown)" || bad "checkout_url missing or not test"
 expect "create_checkout again -> 200" 200 "$(post "$JA" /api/checkout)"
 has "  ...reuses the open order" "\"reused\":true,\"order_id\":\"$OID\""
+
+echo "== 2b. open_checkout (returns the Stripe URL only to the owning session)"
+expect "open_checkout without session -> 401" 401 "$(post "$NOJAR" /api/open-checkout "{\"order_id\":\"$OID\"}")"
+expect "open_checkout, session B on A's order -> 404" 404 "$(post "$JB" /api/open-checkout "{\"order_id\":\"$OID\"}")"
+expect "open_checkout, malformed id -> 400" 400 "$(post "$JA" /api/open-checkout '{"order_id":"nope"}')"
+expect "open_checkout, owner -> 200" 200 "$(post "$JA" /api/open-checkout "{\"order_id\":\"$OID\"}")"
+grep -qE '"checkout_url":"https://checkout\.stripe\.com/[^"]*cs_test_' /tmp/pdfs_body && ok "  ...returns the Stripe TEST URL (not shown)" || bad "  ...no valid checkout_url"
+expect "open_checkout cross-origin -> 403" 403 "$(post "$JA" /api/open-checkout "{\"order_id\":\"$OID\"}" -H 'Origin: https://evil.example')"
 
 echo "== 3. Before payment"
 expect "check_order -> 200" 200 "$(post "$JA" /api/order "{\"order_id\":\"$OID\"}")"

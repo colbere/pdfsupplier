@@ -478,3 +478,36 @@ HEAD was unchanged afterwards (`f91b300`); no test commit remains.
 - The extension's in-memory log will hold the one-time code and the Stripe URL during the agent run. It is in memory only, behind a token, local.
 - Wrangler's local state (`.wrangler/`) holds only hashes of codes and sessions. It is git-ignored.
 - **For when the repo goes public:** consider turning on GitHub's secret scanning / push protection in the repo settings (on GitHub, under Settings → Security). It blocks key-shaped pushes on GitHub's side, even if the local hook were skipped. Availability for private repos depends on the plan; for public repos it's generally available. Not verified here.
+
+---
+
+## 2026-11-13 (UTC-7): Agent run 1, then a fix for payment and download
+
+### Run 1
+Details are in `docs/test-runs/2026-11-13-1417-opus55-run1.md`. Summary:
+- **Worked:** the agent signed in, saw the five new tools on the next turn, and called `get_product` and `create_checkout` in parallel, with no clicking on the page.
+- **Stopped at payment:** "none of my tools can open or type into the Stripe checkout page."
+- **Answered:** Q1 yes, Q12 yes, Q2 no.
+
+### Reading the extension's code after the run
+- `extension/sidepanel/services/extensionBridge.ts` `executeTabTool` handles the case where a **page tool navigates**: when the message channel closes, it waits for the new document's content script and tools, waits for page load, then asks the new page for a cross-document result. It also follows a tool that opens a new tab (`onTabChanged`).
+- So the fix belongs on our page, not in the agent.
+
+### User decision (asked with options)
+- Payment: **new `open_checkout` tool** (recommended). Rejected: Stripe Embedded Checkout (conflicts with rule 3), and stopping to record the failure as the result.
+- Download: **`get_download` saves the file itself** (recommended). Rejected: leaving the link only, and returning the PDF text.
+- Recorded as D18 and D19.
+
+### What was built
+- Server: `POST /api/open-checkout`, through `withSession`. It returns the stored Stripe URL only for the session's own unpaid, unexpired order. It logs `open_checkout: <order> -> navigating to Stripe`, never the URL.
+- Page:
+  - the `open_checkout` tool (fetches the URL, `location.assign`, promise left pending);
+  - `savePdf()` used by `get_download` (same-origin fetch, `%PDF-` check, detached `<a download>` on a `blob:` URL);
+  - updated "next step" hints in `get_product` and `create_checkout`, and a new `get_download` description.
+- Tests:
+  - `purchase-checks.sh` gains 6 `open_checkout` checks: no session → 401; another session → 404; malformed → 400; owner → 200 with a `cs_test_` URL; cross-origin → 403.
+  - **Bug in the test helper found and fixed:** `post()` silently dropped extra curl arguments, so the cross-origin header would never have been sent.
+  - `tools-checks.sh`: the rule-3 check now looks for a checkout **session** URL (`checkout.stripe.com/c/` or `cs_test_`/`cs_live_`), because `app.js` now contains the bare prefix `https://checkout.stripe.com/` as a validation check.
+
+### Results
+`node --check` OK. purchase-checks **26/26**, tools-checks **20/20**, auth-checks **33/33**.
