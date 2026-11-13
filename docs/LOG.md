@@ -641,3 +641,33 @@ Recorded: `docs/PLAN.md` (plain-language plan, **awaiting owner confirmation**) 
   - their agent has a **spending rule only** ("dispatch it from my terminal and it returns with the pdf"), which changes the brief's Phase 2 "confirmation step";
   - **do not report** problems to Stripe or Google.
   - `docs/PLAN.md` is marked confirmed.
+
+---
+
+## 2026-11-13 (UTC-7): Phase 2 start, a feasibility check for the owner's own agent
+
+The owner asked to begin Phase 2 (`docs/PLAN.md`). First question: can a program *outside* the browser read and run WebMCP tools in every frame, including Stripe's iframe, which the extension couldn't see?
+
+- **How Chrome is launched:** the extension's own smoke tests (`tests/smoke/chromeHarness.ts`) launch Chrome via Puppeteer with **`--enable-features=WebMCP`** (headless works). That is the command-line equivalent of the `#enable-webmcp-testing` flag.
+- **Spike** (scratchpad script, nothing changed in the project): it used the `puppeteer-core` already installed in the extension folder, created one Stripe test Checkout Session with our real parameters, opened it in headless Chrome 157, and listed each frame's own tools.
+- **Three script bugs found and fixed on the way:**
+  1. It stopped at the first frame that returned an error.
+  2. It reused a fixed test order ID; Stripe's idempotency check refused it ("Keys for idempotent requests can only be used with the same parameters"). That is our own safeguard working.
+  3. It needed a fresh ID per run.
+
+Result:
+```
+[top]    https://checkout.stripe.com: (none)
+[iframe] https://js.stripe.com: fill_payment_form,
+         get_order_summary {"consequentialHint":false,"readOnlyHint":true,"untrustedContentHint":true},
+         select_payment_method,
+         submit_payment {"consequentialHint":true,"readOnlyHint":false,"untrustedContentHint":false}
+(about 11 other Stripe, Google Pay and hCaptcha frames: "Access to the feature "tools" is disallowed by permissions policy")
+
+Ran get_order_summary from outside the browser:
+{"content":[{"type":"text","text":"{\"livemode\":false,\"currency\":\"usd\",\"totalAmount\":100,...,\"lineItems\":[{\"name\":\"The PDF Supplier: one PDF\",\"minorUnitsAmount\":100,\"quantity\":1}]}"}]}
+```
+Conclusions:
+1. An outside program sees **all 4 Stripe tools on load, including `fill_payment_form`**, and can run them in the owning frame.
+2. **Stripe's own annotations:** `submit_payment` is `consequentialHint: true`; `get_order_summary` is read-only and untrusted-content; `fill_payment_form` and `select_payment_method` have none set (consistent with no Allow prompt for the form fill in run 3).
+3. `get_order_summary` gives the agent's code a dependable amount, currency and `livemode` to **enforce the spending rule before `submit_payment`**, independent of the model.
