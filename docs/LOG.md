@@ -729,3 +729,16 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - **Result:** bought, paid (`stripe=complete/paid`), delivered (596 bytes, "You now own this PDF."), signed out. No human input.
 - **Key finding:** the hint that Stripe's form tool doesn't report back reached the model **from the store page's `create_checkout` text** (plan step 1), not from `knowledge.md`. Without the knowledge, the model was slightly more careful: it re-checked the order summary before paying.
 - **Takeaway for outside agents:** with capable general abilities, the store side is now self-explanatory. The remaining risk for outside agents is in their own abilities (iframe tools, waiting, timeouts) and in Stripe's tool behaviour, not in this page.
+
+---
+
+## 2026-11-13 (UTC-7): Plan updated; agentic commerce research (track 4)
+
+- `docs/PLAN.md`: steps 1–3 marked ✅ with links to the run records. New step 5 (test real outside agents). Step 4 marked "research done, awaiting decision".
+- Research: three parallel doc reads (Stripe seller side; Stripe agent side; the ACP spec). One fetched page contained unrelated injected text; the reader ignored it and it was treated as data only.
+- Findings and recommendation in **`docs/research/AGENTIC-COMMERCE.md`**:
+  - **Shared Payment Tokens** let a seller charge an agent-created, limited, single-use credential with one PaymentIntent call. There is a **sandbox test helper**. The preview API is `2026-09-30.preview`, with preview terms.
+  - ACP is an open REST checkout spec (OpenAI and Stripe); an MCP binding is unreleased; WebMCP is not mentioned.
+  - **Recommendation:** a test-mode prototype of a `pay_order` WebMCP tool that accepts an SPT, alongside the Stripe-page route.
+  - **Prerequisites are the owner's:** preview terms; adding PaymentIntents permission to the restricted key.
+  - **Key unverified point:** whether any agent's SPT can be charged without a prior "commerce relationship".
