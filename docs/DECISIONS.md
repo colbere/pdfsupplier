@@ -203,6 +203,16 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - **Ending:** checks the saved PDF (header plus text exactly "You now own this PDF.") and writes a **redacted run record** to `docs/test-runs/agent/` (code, Stripe URL, download token and keys redacted; the pre-commit guard also checks).
 - **Also:** `wrangler.jsonc` `secrets.required` now loads only `STRIPE_SECRET_KEY` and `ADMIN_TOKEN` into the store (verified in the startup bindings list), so the store never receives the Anthropic key.
 
+## D27. Sandbox only, free only, permanently
+- **Date:** 2026-11-14. **Owner:** "I don't plan on running this as a real business. It's not worth the trouble. I want it all to remain free and in Stripe's sandbox mode."
+- **Decision:**
+  - The project stays in **Stripe sandbox/test mode permanently**. No live keys, no live payments, **no real $1 charge**. This **changes the brief's Phase 2**, which planned one real $1 charge.
+  - **No paid services.** Anything made public later must be free. Buying the domain is therefore out unless it costs nothing.
+- **Consequences:**
+  - The test-key guard (D3, D16) and the agent's `requireTestMode: true` (D26) are **permanent safeguards**, not temporary ones.
+  - The "go-live requirements" from reading the Shared Payment Token preview terms (receipts, a terms of service and privacy policy, sales tax, being merchant of record for real customers) **do not apply**: there are no real transactions.
+  - The SPT preview terms were reviewed with the owner (not legal advice). For sandbox use they raise no concern. Sections 4 and 5 (catalogue and brand licences) apply only to catalogue or AI-platform listing, which isn't planned.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

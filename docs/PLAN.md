@@ -57,11 +57,15 @@ Findings: `docs/research/AGENTIC-COMMERCE.md`. **Recommendation:** a test-mode p
 ### 5. Test real outside agents (after the agentic commerce decision)
 Re-run Google's **stock** extension (no local patches) against the improved page, and try other browser agents as they gain WebMCP support. This is the true measure of the goal; my own agent can't stand in for them.
 
-## Still planned from the brief
-Phase 2 still includes deploying the site to pdfsupplier.com, the Chrome origin-trial token, and one real $1 charge with a spending cap. **Change from the brief:** the brief's Phase 2 also listed "a confirmation step"; the owner has chosen a **spending rule only** for their agent (D25). Abuse protection for the public site (Q13) has to come before going live.
+## Sandbox only, free only (decided 2026-11-14, D27)
+This stays an experiment: **Stripe sandbox/test mode permanently, and no paid services.**
+- **Dropped from the brief:** the real $1 charge, and buying the domain (unless free).
+- **If anything is made public later:** free hosting only, still sandbox-only, and abuse protection first (Q13).
+- The test-key guard and the agent's test-mode-only rule stay as permanent safeguards.
 
 ## Decisions (made 2026-11-13)
 - [x] The plan matches what I intend.
 - [x] "Without context" (Stage B) = my own agent with the extra layer switched off.
 - [x] My agent uses a **spending rule only**, no confirmation prompt. I start it from the terminal and it returns with the PDF.
 - [x] **Do not report** the Stripe and extension problems to Stripe or Google.
+- [x] **Sandbox and free only, permanently** (2026-11-14, D27). No real charge, no paid services.
