@@ -178,6 +178,7 @@ async function main() {
       }
 
       const results = [];
+      let consequentialRan = null; // a page navigation started by a consequential action, if any
       for (const call of calls) {
         const tool = byName.get(call.name);
         note(`- Call: ${call.name} ${JSON.stringify(call.input)}`);
@@ -203,6 +204,11 @@ async function main() {
           }
           note(`  → SPENDING RULE: allowed (${check.summary.totalAmount} ${check.summary.currency}, livemode ${check.summary.livemode})`);
         }
+        // After a consequential action (e.g. paying) the page usually moves on by itself a few
+        // seconds later. Start listening before the action so that navigation isn't missed.
+        if (tool.annotations?.consequentialHint === true) {
+          consequentialRan = page.waitForNavigation({ timeout: 30_000 }).then(() => true, () => false);
+        }
         const r = await runTool(tool, call.input, TOOL_TIMEOUT_MS);
         const out = formatResult(tool, r);
         note(`  → ${r.kind}: ${String(out.content).replace(/\s+/g, " ").slice(0, 300)}`);
@@ -210,7 +216,15 @@ async function main() {
       }
       messages.push({ role: "user", content: results });
 
+      if (consequentialRan) {
+        const moved = await consequentialRan;
+        note(`  (after the consequential action: ${moved ? `page moved to ${originOf(page.url())}` : "page did not move within 30 s"})`);
+      }
       pageTools = await settle(page, policy.isAllowedToolOrigin);
+      if (pageTools.length === 0 && policy.isAllowedPage(originOf(page.url()))) {
+        note("  (no tools found on an allowed page; checking once more)");
+        pageTools = await settle(page, policy.isAllowedToolOrigin);
+      }
     }
     if (outcome === "unfinished") outcome = "stopped: turn limit";
   } finally {

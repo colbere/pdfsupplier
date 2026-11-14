@@ -115,17 +115,22 @@ export async function runTool(tool, input, timeoutMs) {
  * Waits until the page has stopped changing: network quiet, then the same URL and tool list
  * for `quietMs`, with at least one tool. Gives up after `maxMs` and returns what is there.
  */
-export async function settle(page, isAllowedToolOrigin, { maxMs = 15000, quietMs = 800 } = {}) {
+export async function settle(page, isAllowedToolOrigin, { maxMs = 15000, quietMs = 800, networkMs = 5000 } = {}) {
   const start = Date.now();
   try {
-    await page.waitForNetworkIdle({ idleTime: 600, timeout: maxMs, concurrency: 2 });
+    // Capped well below maxMs: some pages never go fully quiet, and the tool check below
+    // must always get time to run. (Bug in agent run 1: this wait used the whole budget,
+    // so settle returned an empty tool list without ever looking.)
+    await page.waitForNetworkIdle({ idleTime: 600, timeout: Math.min(networkMs, maxMs), concurrency: 2 });
   } catch {
-    // Some pages never go fully quiet; carry on with the tool check.
+    // Not quiet in time; carry on with the tool check.
   }
   let lastSig = null;
   let stableSince = Date.now();
   let tools = [];
-  while (Date.now() - start < maxMs) {
+  let looked = false;
+  while (!looked || Date.now() - start < maxMs) {
+    looked = true;
     tools = await listTools(page, isAllowedToolOrigin);
     const sig = page.url() + "|" + tools.map((t) => `${t.origin}:${t.name}`).sort().join(",");
     if (sig !== lastSig) {

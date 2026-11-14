@@ -689,3 +689,22 @@ Owner choices: install deps; copy the key locally; Stage B switches off only the
    - Browser only (no model call): the agent sees `sign_in` on the store with its schema; settled in 1680 ms.
    - Store suites after the wording change: auth 33/33, tools 20/20, purchase 25/25 (the server-log check was skipped because its log variable wasn't set).
 7. **Not yet run end to end with the model:** that spends the owner's Anthropic credit, so it is the owner's first dispatch.
+
+---
+
+## 2026-11-13 (UTC-7): Owner's first agent dispatch (`npm run agent -- --show`) and fixes
+
+The run record is in `docs/test-runs/agent/2026-11-14T00-29-12-context-full.md` (redacted; checked: 0 code-shaped strings, 0 Stripe session URLs, 0 keys, 0 download tokens). Analysis appended there.
+- **Paid, but no PDF.** Every step through `check_order` = paid worked, including **the spending rule allowing exactly 100 usd test mode** before `submit_payment`. Turn 9 was given **no tools**, so the model ended before `get_download`.
+- **Cause:** a `settle()` bug. The network-idle wait consumed the whole budget and the tool check never ran.
+- **Reproduction without the model** (`scratchpad/repro-turn9.mjs`, scripted tool calls, free in Stripe test mode):
+  1. It did not reproduce turn 9 headless (7 tools seen in 6 samples).
+  2. It **found a second issue:** `settle()` returned while still on Stripe, before Stripe's redirect, after `submit_payment`.
+- **Fixes (general abilities, not store knowledge):**
+  1. Cap the network wait at 5 s and always run the tool check at least once.
+  2. After a consequential action, wait up to 30 s for navigation before settling (the listener starts before the action).
+  3. If an allowed page shows no tools, settle once more.
+- **Checks:** a busy-network test (the page fetches every 150 ms) → `settle` returns `[sign_in]` in about 1.6 s; policy tests 15/15; syntax OK.
+- **Not confirmed:** whether a visible window had any other cause. The next `--show` run will show it.
+- The owner asked about Chrome download settings: not needed. The agent's Chrome uses its own temporary profile and download folder (`agent-downloads/`).
+- The owner typed `get_download` into PowerShell after the run. Harmless: it's a tool name on the page, not a terminal command.
