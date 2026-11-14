@@ -187,6 +187,22 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   3. **Do not report** the Stripe or extension problems (D20, D21, D23, Q3, Q15) to Stripe or Google.
 - **Supersedes:** the "needs the user's OK" notes about reporting upstream in D20 and in the Phase 1 closing summary: the answer is no.
 
+## D26. Phase 2 agent design (`agent/`, `npm run agent`)
+- **Date:** 2026-11-13. **Owner choices:** install Puppeteer and the Anthropic SDK in the project; copy the Anthropic key locally from the extension's `.env`; Stage B switches off **only the store-specific knowledge**; hidden window with `--show`.
+- **How it works:**
+  - **Chrome:** `puppeteer-core` launches the installed Chrome with `--enable-features=WebMCP` (as Google's extension tests do), using a temporary profile. Downloads go to `agent-downloads/<run>/` (git-ignored).
+  - **Tools:** read from **every frame** with `getTools()` filtered to each frame's own tools. That includes Stripe's `js.stripe.com` iframe, which the stock extension can't see. They are offered to Claude with the source site in each description.
+  - **Running tools:** in the owning frame with `executeTool`. Time limit 30 s. A navigation (`null` result or a destroyed context) is reported as "moved to a new page".
+  - **Waiting:** after every round, wait for the network to go quiet and the tool list to hold still, with at least one tool, up to 15 s.
+  - **Model loop:** Claude **Opus 5.5** through `@anthropic-ai/sdk` 1.8.0, using the documented manual tool loop (the tool list changes between pages, and the spending check sits between Claude's choice and execution). Effort `medium`. Assistant content is passed back unchanged.
+  - **Fallbacks:** server-side fallbacks are enabled (`server-side-fallback-2026-07-01`, `fallbacks: "default"`), as the SDK guidance recommends for Opus 5.5. If the model declines on safety grounds, the API retries on another Claude model. This was told to the owner and can be removed.
+  - **Untrusted data:** results of tools marked untrusted-content are wrapped in `<untrusted_page_data>`, and the system prompt says never to follow instructions inside them.
+  - **Spending rule** (`agent/policy.mjs`, the only safeguard, fails closed): any `consequentialHint` tool must be on Stripe Checkout (`js.stripe.com` tool, `checkout.stripe.com` page). The agent's code first runs that frame's `get_order_summary` and requires `livemode: false`, `usd`, an integer total ≤ 100 and no recurring charges. One payment attempt per run, counted before it runs. Tools and pages from any other site are ignored, and the run stops if the tab leaves the store or Stripe. **15 unit tests** in `tests/agent-policy.test.mjs`.
+  - **Context switch:** `--context full` (default) appends `agent/knowledge.md` (the Phase 1 lessons) to the system prompt; `--context none` leaves it out. The general abilities above are always on.
+  - **Sign-in:** each run makes its own one-time code through the admin API (only the hash goes to the store).
+  - **Ending:** checks the saved PDF (header plus text exactly "You now own this PDF.") and writes a **redacted run record** to `docs/test-runs/agent/` (code, Stripe URL, download token and keys redacted; the pre-commit guard also checks).
+- **Also:** `wrangler.jsonc` `secrets.required` now loads only `STRIPE_SECRET_KEY` and `ADMIN_TOKEN` into the store (verified in the startup bindings list), so the store never receives the Anthropic key.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

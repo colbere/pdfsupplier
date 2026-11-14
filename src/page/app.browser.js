@@ -115,6 +115,9 @@
             `The checkout page expires at ${data.expires_at}.`,
             "Next: call open_checkout with this order_id. It takes this tab to the Stripe page, where Stripe's own tools let you pay. " +
               "After payment Stripe returns to this store; then call check_order with this order_id.",
+            "What to expect on Stripe's page: its tools let you choose a payment method, fill in the payment form and submit it. " +
+              "Its form-filling tool can fill the form without reporting back that it finished. " +
+              "Submitting starts the payment; the tab then returns to this store, and this store's tools are available again once it has loaded.",
           ].join("\n");
         } catch {
           return UNREACHABLE;
@@ -125,8 +128,8 @@
       name: "open_checkout",
       description:
         "Takes this browser tab to the Stripe checkout page for an unpaid order, so you can pay there " +
-        "using the Stripe page's own tools. Takes the order_id from create_checkout. The tab leaves the store; " +
-        "after payment Stripe returns to the store and its tools come back. Requires being signed in.",
+        "using the Stripe page's own tools. Takes the order_id from create_checkout. The tab leaves the store, " +
+        "so the store's tools are unavailable until Stripe returns the tab here after payment. Requires being signed in.",
       inputSchema: {
         type: "object",
         properties: {

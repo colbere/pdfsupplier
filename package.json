@@ -11,9 +11,14 @@
     "check-env": "node scripts/check-env.mjs",
     "new-code": "node scripts/new-code.mjs",
     "kill-switch": "node scripts/kill-switch.mjs",
-    "unlock": "node scripts/unlock.mjs"
+    "unlock": "node scripts/unlock.mjs",
+    "agent": "node agent/run.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.162.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "puppeteer-core": "^25.17.0"
   }
 }

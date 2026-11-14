@@ -671,3 +671,21 @@ Conclusions:
 1. An outside program sees **all 4 Stripe tools on load, including `fill_payment_form`**, and can run them in the owning frame.
 2. **Stripe's own annotations:** `submit_payment` is `consequentialHint: true`; `get_order_summary` is read-only and untrusted-content; `fill_payment_form` and `select_payment_method` have none set (consistent with no Allow prompt for the form fill in run 3).
 3. `get_order_summary` gives the agent's code a dependable amount, currency and `livemode` to **enforce the spending rule before `submit_payment`**, independent of the model.
+
+---
+
+## 2026-11-13 (UTC-7): Phase 2, building the owner's agent (Stage A)
+
+Owner choices: install deps; copy the key locally; Stage B switches off only the knowledge; hidden window with `--show` (D26).
+
+1. **Installed** `puppeteer-core` 25.17.0 and `@anthropic-ai/sdk` 1.8.0 in the project ("found 0 vulnerabilities").
+2. **Copied `ANTHROPIC_API_KEY`** from `webmcp-extension/.env` to the project `.env`, file to file, never displayed (106 characters, `sk-ant-`). `.env.example` gains an empty `ANTHROPIC_API_KEY=` line. `wrangler.jsonc` `secrets.required` limits the store to its two secrets. **Verified:** the bindings list shows only `STRIPE_SECRET_KEY` and `ADMIN_TOKEN`.
+3. **Plan step 1, page wording:** `create_checkout` now adds a factual "What to expect on Stripe's page" paragraph (the form tool may not report back; submitting returns the tab to the store). `open_checkout`'s description says the store's tools are unavailable until the tab returns.
+4. **Read the SDK's current TypeScript tool-use reference** (manual agentic loop; forced `tool_choice` is not allowed on Opus 5.5) before writing the loop.
+5. **Built `agent/`:** `policy.mjs` (spending rule), `browser.mjs` (Chrome and tools), `knowledge.md` (the context layer), `run.mjs` (`npm run agent`). Design in D26.
+6. **Checks:**
+   - `node --check` on all agent files: OK.
+   - Spending rule: `tests/agent-policy.test.mjs`, **15/15**. Allows exactly $1.00 test-mode USD; refuses $1.01, live mode, missing livemode, EUR, recurring, a non-integer amount, the wrong page or tool origin, a missing, unreadable or timed-out summary, and a second purchase.
+   - Browser only (no model call): the agent sees `sign_in` on the store with its schema; settled in 1680 ms.
+   - Store suites after the wording change: auth 33/33, tools 20/20, purchase 25/25 (the server-log check was skipped because its log variable wasn't set).
+7. **Not yet run end to end with the model:** that spends the owner's Anthropic credit, so it is the owner's first dispatch.

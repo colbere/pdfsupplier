@@ -18,6 +18,10 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
 
+  // Load only these secrets from .env into the Worker. (.env also holds the Phase 2
+  // agent's ANTHROPIC_API_KEY, which the store never needs.)
+  "secrets": { "required": ["STRIPE_SECRET_KEY", "ADMIN_TOKEN"] },
+
   // Don't send anonymous usage data to Cloudflare.
   "send_metrics": false,
 

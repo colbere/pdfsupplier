@@ -19,3 +19,6 @@ Thumbs.db
 
 # Downloaded PDFs (test downloads may land in this folder)
 *.pdf
+
+# Phase 2 agent downloads
+agent-downloads/
