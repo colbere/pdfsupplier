@@ -708,3 +708,13 @@ The run record is in `docs/test-runs/agent/2026-11-14T00-29-12-context-full.md` 
 - **Not confirmed:** whether a visible window had any other cause. The next `--show` run will show it.
 - The owner asked about Chrome download settings: not needed. The agent's Chrome uses its own temporary profile and download folder (`agent-downloads/`).
 - The owner typed `get_download` into PowerShell after the run. Harmless: it's a tool name on the page, not a terminal command.
+
+---
+
+## 2026-11-13 (UTC-7): Owner's second dispatch, **first fully autonomous purchase (Stage A)**
+
+`npm run agent -- --show`, context full. Record: `docs/test-runs/agent/2026-11-14T01-03-44-context-full.md`.
+- 10 turns, about 1 minute of model time plus the 30 s form timeout. sign_in → get_product → create_checkout → open_checkout → (Stripe) get_order_summary + select_payment_method → fill_payment_form (timeout, expected) → **spending rule allowed 100 usd, livemode false** → submit_payment → the agent waited for the redirect ("page moved to http://localhost:8787") → check_order = paid → get_download (596 bytes, delivered) → final report.
+- **Verified independently:** store log `stripe=complete/paid -> paid` and `served PDF`; the file is 596 bytes and `pdftotext` = "You now own this PDF."; 0 secrets in the record or the store log.
+- **No human input during the run.** This is the goal in `docs/PLAN.md` step 2: dispatched from the terminal, it returned with the PDF.
+- **Next per the plan:** Stage B (`npm run agent -- --context none`).
