@@ -718,3 +718,14 @@ The run record is in `docs/test-runs/agent/2026-11-14T00-29-12-context-full.md` 
 - **Verified independently:** store log `stripe=complete/paid -> paid` and `served PDF`; the file is 596 bytes and `pdftotext` = "You now own this PDF."; 0 secrets in the record or the store log.
 - **No human input during the run.** This is the goal in `docs/PLAN.md` step 2: dispatched from the terminal, it returned with the PDF.
 - **Next per the plan:** Stage B (`npm run agent -- --context none`).
+
+---
+
+## 2026-11-13 (UTC-7): Stage B, the agent without store knowledge, **success**
+
+The owner asked whether Stage B was worthwhile, given the ultimate goal of *outside* agents completing the purchase. Advice: yes, but keep it small. It shows whether the page explains itself; it does not stand in for outside agents, whose success on the Stripe-page route depends mostly on Stripe and agent makers. Agentic commerce makes "is the page enough?" the whole question. The owner ran it.
+
+Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
+- **Result:** bought, paid (`stripe=complete/paid`), delivered (596 bytes, "You now own this PDF."), signed out. No human input.
+- **Key finding:** the hint that Stripe's form tool doesn't report back reached the model **from the store page's `create_checkout` text** (plan step 1), not from `knowledge.md`. Without the knowledge, the model was slightly more careful: it re-checked the order summary before paying.
+- **Takeaway for outside agents:** with capable general abilities, the store side is now self-explanatory. The remaining risk for outside agents is in their own abilities (iframe tools, waiting, timeouts) and in Stripe's tool behaviour, not in this page.
