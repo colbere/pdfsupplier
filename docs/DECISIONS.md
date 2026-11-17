@@ -301,3 +301,9 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 **Change:** `redact()` in `src/stripe.js` now replaces `spt_…` with `[REDACTED_TOKEN]`, as well as keys and checkout URLs. Every Stripe error passes through it (`StripeError`, `stripeFailure`), so a token echoed in any Stripe error message is never logged or returned. Before, only the `pay_with_token` path stripped tokens itself.
 **Why:** `docs/SECURITY.md` says payment tokens are never logged. The other Stripe error paths (e.g. `get_test_payment_token`, `check_order`) didn't guarantee it. Risk was low (sandbox, $1 cap, 15-minute life).
 **Tests:** `tests/redact.test.mjs` (5, made-up values). Local suites still pass: token 17, public 56, purchase 25, policy 22.
+
+## D33: License: MIT, copyright "colbere" (2026-11-17, review A1)
+**Decision (owner):** the repo is MIT-licensed (`LICENSE`), copyright line "Copyright (c) 2026 colbere" (the GitHub username, so the real name isn't added to another file). `package.json` says `"license": "MIT"`.
+**Exception:** `docs/extension-patch.diff` changes Google's Apache-2.0 extension and stays under Apache-2.0 (its header says so; D32-era review item A5).
+**Why:** the repo is public; with no license nobody could legally reuse it. MIT is the simplest permissive choice.
+

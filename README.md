@@ -67,3 +67,7 @@ With the site running: `bash tests/auth-checks.sh`, `bash tests/tools-checks.sh`
 - [docs/OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md): what we're trying to find out
 - [docs/test-runs/](docs/test-runs/): one file per agent test run
 - [BRIEF.md](BRIEF.md): the original project brief
+
+## License
+
+MIT, see [LICENSE](LICENSE). The exception is [docs/extension-patch.diff](docs/extension-patch.diff), which changes Google's Example Agentic Chrome Extension and stays under that project's Apache License 2.0.

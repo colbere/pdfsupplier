@@ -1,6 +1,7 @@
 {
   "name": "pdf-supplier",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Experiment: can an AI agent buy a PDF using only WebMCP tools? Phase 1, local, Stripe test mode.",
