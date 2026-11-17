@@ -94,18 +94,21 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 - **Page text:** updated to say any agent can try (I approve the wording).
 - Tests for all of the above. My own agent runs as a "stranger" (no sign-in, no notes) to prove it works.
 
-## Step 2. Put it online (Claude proceeds; I do the sign-ups, the domain purchase and typing secrets)
+## Step 2. Put it online (Claude proceeds; I do the sign-ups, the domain purchase and typing secrets). **Done 2026-11-17**
+Live at https://pdfsupplier.com. Origin trial registered, Cloudflare rate-limit rule on, Bot Fight Mode off. `tests/live-checks.sh`: 52/52. Not covered on live: paying on Stripe's own page (the card route), which is the first item of Step 3.
 - **Cloudflare:** a free account; deploy the Worker and its storage; set the Stripe sandbox key and admin password as Cloudflare secrets (I enter them myself).
 - **Domain:** buy it (the one allowed cost) and point it at the Worker.
 - **Chrome's WebMCP origin trial:** register my domain so ordinary Chrome browsers expose my tools without the testing flag.
 - **Checks before announcing:** the server refuses live keys; the limits work on the real site; nothing secret is in the page or logs.
 
 ## Step 3. Try real outside agents
+- **First:** my own agent's card route (`stripe-page`) on the live site, to cover paying on Stripe's page and the return trip, which the live checks couldn't do.
+- **Done:** Claude in Chrome (2026-11-17). It couldn't use the tools: it looked for WebMCP under the wrong name and didn't call any tool. See `docs/test-runs/2026-11-17-0840-claude-in-chrome.md`.
 - My own agent against the live site (with and without context).
 - Google's **unmodified** extension.
 - **Meta Muse**, and any other agents that appear. Record what each one does, using `get_stats` and `leave_feedback` as extra evidence.
 
-## Things to verify before Step 2 (not checked yet)
+## Things to verify before Step 2 (all checked by 2026-11-17; see docs/research/GO-LIVE.md and docs/SECURITY.md)
 - Whether Cloudflare's free plan includes the storage this store uses (Durable Objects).
 - The current status and steps of Chrome's WebMCP origin trial.
 - What Cloudflare offers for free rate limiting.
