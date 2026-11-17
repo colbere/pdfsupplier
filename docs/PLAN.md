@@ -103,6 +103,7 @@ Live at https://pdfsupplier.com. Origin trial registered, Cloudflare rate-limit 
 
 ## Step 3. Try real outside agents
 - **First:** my own agent's card route (`stripe-page`) on the live site, to cover paying on Stripe's page and the return trip, which the live checks couldn't do.
+- **Done:** Google's example extension (patched build) bought the PDF on the live site in everyday Chrome, with no flag, through the token route (2026-11-17, PASS). See `docs/test-runs/2026-11-17-0845-webmcp-extension-live.md`.
 - **Done:** Claude in Chrome (2026-11-17). It couldn't use the tools: it looked for WebMCP under the wrong name and didn't call any tool. See `docs/test-runs/2026-11-17-0840-claude-in-chrome.md`.
 - My own agent against the live site (with and without context).
 - Google's **unmodified** extension.
