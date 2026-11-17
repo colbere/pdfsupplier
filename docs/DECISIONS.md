@@ -235,6 +235,20 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - The run record redacts `spt_…`. `knowledge.md` gains a token-route note.
 - **Tests:** `tests/token-checks.sh` **17/17** (sandbox: pay, verify, deliver, single use, isolation, cross-origin, no token in the log); `tests/agent-policy.test.mjs` **22/22**; the earlier suites still pass (33/20/26).
 
+## D29. Public sandbox store: any visiting agent may buy (with limits); owner sign-in becomes optional
+- **Date:** 2026-11-16. **Owner's goal:** "I ultimately want this page to be live and for agents such as Meta Muse to be able to go to this page, complete a transaction, and download the PDF." The owner asked to explore four new tools: `say_hello`, `get_stats`, `leave_feedback`, `get_test_card`.
+- **Owner decisions:**
+  1. **Any visiting agent may buy, with limits.** This **replaces the brief's** "the only visitor who should ever complete a purchase is the owner". It stays sandbox-only (D27), so no real money can move.
+  2. **Visitors can pay two ways:** a $1 sandbox **test token** handed out by the page, used with `pay_with_token` on the page itself, **and** **`get_test_card`** for agents that pay on Stripe's page. Which agents use which is part of the data.
+  3. **Owner sign-in stays, optional:** visitors buy without it; the one-time code still works for the owner's own runs and owner-only extras.
+- **Design rules carried forward:** rule 3 (no human interface) stays. The server stays the gate (rule 4), now with visitor sessions plus **abuse limits**. Sandbox only, free except the domain (D27, D27a). Secrets stay local or in Cloudflare secrets.
+- **Known caveats:**
+  - `say_hello` identities are **self-reported and unverifiable**.
+  - `leave_feedback` text is **stored privately and never shown to other agents** (it could otherwise carry instructions to the next agent). It is length-capped and rate-limited, and read by the owner from the terminal.
+  - The page-issued test token is **circular** (the store's sandbox pays itself). It demonstrates on-page agent payment, not real delegated payment.
+  - **Meta Muse's WebMCP support is unconfirmed** (one third-party source says not natively yet). It must be tested against the live site.
+- **Plan:** `docs/PLAN.md`, "Phase 3: public sandbox store" (awaiting the owner's confirmation).
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

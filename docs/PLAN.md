@@ -72,3 +72,40 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 - [x] **Do not report** the Stripe and extension problems to Stripe or Google.
 - [x] **Sandbox and free only, permanently** (2026-11-14, D27). No real charge, no paid services, **except a domain** (2026-11-16, D27a). No legal work or business formation.
 - [x] **Start the Shared Payment Token prototype** (2026-11-16).
+
+---
+
+# Phase 3: public sandbox store (draft, waiting for my confirmation)
+
+**Goal:** the page is live on my domain, and outside agents (for example Meta Muse) can visit, buy the PDF in Stripe's sandbox and download it, with no help from me. Still sandbox-only and free except the domain (D27, D27a). Decisions: D29.
+
+**Honest expectations:**
+- Some agents won't be able to use WebMCP at all, and then a text-only page gives them nothing to do. **Meta Muse's WebMCP support is unconfirmed**; we find out by trying.
+- Agents that pay on Stripe's page may still get stuck on Stripe's hidden iframe tools. The page-issued test token avoids that.
+
+## Step 1. New tools on my page (built and tested locally first)
+- **Buying without signing in:** a visiting agent gets its own short-lived visitor session automatically. My one-time-code sign-in still works for my own runs.
+- **`get_test_payment_token`:** hands the visiting agent a $1 sandbox token to use with `pay_with_token`. The whole purchase stays on my page.
+- **`get_test_card`:** Stripe's public test card details, for agents that pay on Stripe's page.
+- **`say_hello`:** the agent gives its name and model; I count them (self-reported, can't be verified).
+- **`get_stats`:** public counters: visits, tool calls, test purchases, hellos.
+- **`leave_feedback`:** the agent says what confused it or failed. Kept private (never shown to other agents), capped in length, limited per visitor and per day. I read it with a terminal command.
+- **Limits so the sandbox can't be abused:** per-visitor and per-day caps on orders, tokens, checkouts and feedback. The kill switch still stops everything.
+- **Page text:** updated to say any agent can try (I approve the wording).
+- Tests for all of the above. My own agent runs as a "stranger" (no sign-in, no notes) to prove it works.
+
+## Step 2. Put it online (each sign-up or payment needs my go-ahead)
+- **Cloudflare:** a free account; deploy the Worker and its storage; set the Stripe sandbox key and admin password as Cloudflare secrets (I enter them myself).
+- **Domain:** buy it (the one allowed cost) and point it at the Worker.
+- **Chrome's WebMCP origin trial:** register my domain so ordinary Chrome browsers expose my tools without the testing flag.
+- **Checks before announcing:** the server refuses live keys; the limits work on the real site; nothing secret is in the page or logs.
+
+## Step 3. Try real outside agents
+- My own agent against the live site (with and without context).
+- Google's **unmodified** extension.
+- **Meta Muse**, and any other agents that appear. Record what each one does, using `get_stats` and `leave_feedback` as extra evidence.
+
+## Things to verify before Step 2 (not checked yet)
+- Whether Cloudflare's free plan includes the storage this store uses (Durable Objects).
+- The current status and steps of Chrome's WebMCP origin trial.
+- What Cloudflare offers for free rate limiting.

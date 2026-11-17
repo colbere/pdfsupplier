@@ -795,3 +795,12 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - **No human input during either run.** The owner hit an unrelated terminal error between runs (details not shared; resolved by restarting the terminal). It didn't affect the runs.
 - **Finding:** on the token route the whole purchase happens through **the store's own WebMCP tools**: no third-party page, no iframe tools, no timeouts, no navigation. Without context, the agent found `pay_with_token` from the page alone (it read `get_product`, which lists both ways to buy, then paid).
 - **What this still doesn't show:** whether an *outside* agent can obtain a token addressed to this store (a real agent needs its own Stripe account or a person's Link agent wallet, plus the store's Stripe profile ID), and whether Stripe requires a prior seller–agent relationship for that. Here the token came from the store's own sandbox test helper.
+
+---
+
+## 2026-11-16 (UTC-7): New goal, a public sandbox store for outside agents (D29)
+
+- **Owner's goal:** the page live so that agents such as **Meta Muse** can buy and download. The owner asked to explore `say_hello`, `get_stats`, `leave_feedback` and `get_test_card`.
+- **Web search on Meta Muse** (Wikipedia, ai.meta.com/muse, Meta help, Arcjet, Zapier, tjrobertson.com, anythingmcp.com): Muse runs in a Meta-hosted cloud VM with a full browser (seen by sites as Chrome on Linux). **One third-party source says Muse doesn't natively support WebMCP yet** (Meta AI does). Unconfirmed by Meta.
+- **Owner decisions:** any visiting agent may buy (with limits); visitors pay by **page-issued test token and/or test card**; owner sign-in stays, optional.
+- Plan drafted in plain terms: `docs/PLAN.md`, "Phase 3" (**awaiting confirmation**).
