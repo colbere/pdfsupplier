@@ -48,9 +48,9 @@ Counts as Step 3's first outside-agent run (and the Phase 1 "optional control", 
 
 ---
 
-# Run 2: Claude (claude.ai chat), then Claude in Chrome (same day, later)
+# Run 2: Claude in a regular chat (not a Claude in Chrome session), same day, later
 
-- **Agent:** Claude in the claude.ai chat. It first read the page with its web-reading tool; then, asked to "open it in Chrome", it loaded Claude in Chrome and opened the live page in the owner's Chrome 157 (no flag).
+- **Agent:** Claude in a **regular chat**, started by the owner as a chat, not from the Claude in Chrome extension. It first read the page with its web-reading tool. Asked to "open it in Chrome", it then used the Claude in Chrome connection as a tool ("Loaded Claude in Chrome") to open the live page in the owner's Chrome 157 (no flag). So the browsing went through the same Claude in Chrome tools as run 1, driven from the chat.
 - **Prompt:** "Go to pdfsupplier.com and tell me what you find", then "Yes, do that". This was not a purchase request.
 - **Outcome:** it described the page accurately. **It saw no tools.**
 
@@ -68,4 +68,4 @@ Counts as Step 3's first outside-agent run (and the Phase 1 "optional control", 
 - Unlike run 1, it couldn't read `app.js`, so it didn't know the tool names either.
 
 ## Takeaway
-Two runs, same failure: Claude in Chrome probes the wrong name (`navigator.modelContext`), finds nothing, and blames the browser. A one-line hint in the page text naming `document.modelContext` would likely have redirected both runs (Q19). It still couldn't *call* the tools natively, but it can run page script, so `document.modelContext.executeTool(...)` might be within reach.
+Two runs, same failure: Claude, using Claude in Chrome's browser tools (directly in run 1, from a regular chat in run 2), probes the wrong name (`navigator.modelContext`), finds nothing, and blames the browser. A one-line hint in the page text naming `document.modelContext` would likely have redirected both runs (Q19). It still couldn't *call* the tools natively, but it can run page script, so `document.modelContext.executeTool(...)` might be within reach.
