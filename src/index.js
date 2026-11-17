@@ -624,6 +624,10 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const response = await route(request, env);
+    // Over https, tell browsers to use https only for this host from now on (a year).
+    if (url.protocol === "https:") {
+      try { response.headers.set("Strict-Transport-Security", "max-age=31536000"); } catch { /* immutable */ }
+    }
     const rc = RC.get(request);
     if (ctx && typeof ctx.waitUntil === "function" && isTestKey(env.STRIPE_SECRET_KEY) && rc?.log !== false) {
       ctx.waitUntil(logTraffic(request, env, url, response.status));
@@ -644,8 +648,10 @@ async function route(request, env) {
     const { pathname } = url;
     const method = request.method;
 
-    // One canonical origin: www.<host> redirects to <host> (path kept, query dropped).
-    if (env.CANONICAL_HOST && url.hostname === `www.${env.CANONICAL_HOST}`) {
+    // One canonical origin: https://<host>. www.<host> and plain http:// redirect there
+    // (path kept, query dropped). Local dev (localhost) is untouched.
+    const onLiveHost = env.CANONICAL_HOST && (url.hostname === env.CANONICAL_HOST || url.hostname === `www.${env.CANONICAL_HOST}`);
+    if (onLiveHost && (url.protocol === "http:" || url.hostname !== env.CANONICAL_HOST)) {
       return new Response(null, { status: 301, headers: { Location: `https://${env.CANONICAL_HOST}${pathname}`, ...SECURITY_HEADERS } });
     }
 
