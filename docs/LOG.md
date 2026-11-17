@@ -863,3 +863,12 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 - **Unverified locally:** the www redirect (local dev doesn't present the www host). To check on the live site.
 - `npx wrangler deploy --dry-run`: 74.88 KiB (gzip 20.47 KiB); bindings STORE, ORIGIN_TRIAL_TOKEN, CANONICAL_HOST.
 - **Tests:** public 56, auth 33, tools 22, purchase 25, token 17, policy 22. All pass.
+
+## 2026-11-17: Live on pdfsupplier.com
+
+- Second restricted sandbox key created by the owner and kept in `.env` as `STRIPE_SECRET_KEY_LIVE` (checked: `rk_test_`, different from the local key; value never displayed).
+- `npx wrangler login` done by the owner.
+- First deploy failed: a brand-new Worker can't take `wrangler secret put` before it exists, and `secrets.required` blocks a deploy without them. Fix: `npm run setup-live` now deploys with `--secrets-file`, using a temporary file in a private temp folder that is deleted straight after.
+- Second attempt failed with Cloudflare error 10063 ("You need a workers.dev subdomain"), which hits new accounts. Opening Workers & Pages in the dashboard once fixed it. (A "Cloudflare Access / Zero Trust" prompt appeared on that page and is not needed.) `workers_dev` stays false.
+- Deployed version a63c5e89. Checked live: page 200 with CSP; `get_product` OK; `npm run report -- --live` works with the live admin password; `www` 301s to `https://pdfsupplier.com/` (the local DNS cache briefly said www didn't exist; Cloudflare DNS had it).
+- Still to do: origin-trial token, Bot Fight Mode off and one rate-limit rule, live security and purchase checks.

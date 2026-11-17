@@ -1,11 +1,12 @@
 // npm run setup-live
-// Sends the LIVE site's two secrets to Cloudflare, piped straight to `wrangler secret put`
-// (never printed, never typed into chat):
+// Deploys the LIVE site together with its two secrets (never printed, never typed into chat):
 //   - STRIPE_SECRET_KEY  <- STRIPE_SECRET_KEY_LIVE from .env (must be a restricted SANDBOX key, rk_test_)
 //   - ADMIN_TOKEN        <- ADMIN_TOKEN_LIVE from .env (generated here on first run; separate from
 //                           the local ADMIN_TOKEN), so the owner commands work with --live.
-// Requires `npx wrangler login` first and a deployed Worker (`npx wrangler deploy`).
-import { readFileSync, writeFileSync } from "node:fs";
+// Requires `npx wrangler login` first. Safe to re-run (re-deploys and re-sends the same secrets).
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { ENV_PATH, readEnv, fail } from "./lib.mjs";
@@ -26,16 +27,21 @@ if (!token || token.length < 32) {
   console.log("Generated ADMIN_TOKEN_LIVE in .env (value not shown).");
 }
 
-function put(name, value) {
-  const r = spawnSync("npx", ["wrangler", "secret", "put", name], {
-    input: value + "\n",
-    stdio: ["pipe", "inherit", "inherit"],
+// Deploy with both secrets in one step via a temporary secrets file (a brand-new Worker can't
+// take `wrangler secret put` before its first deploy). The file lives in a private temp folder
+// and is deleted straight after, whatever happens.
+const dir = mkdtempSync(join(tmpdir(), "pdfs-"));
+const file = join(dir, "secrets.json");
+let r;
+try {
+  writeFileSync(file, JSON.stringify({ STRIPE_SECRET_KEY: stripeKey, ADMIN_TOKEN: token }), { mode: 0o600 });
+  r = spawnSync("npx", ["wrangler", "deploy", "--secrets-file", file], {
+    stdio: "inherit",
     shell: process.platform === "win32",
   });
-  if (r.status !== 0) fail(`wrangler secret put ${name} failed (logged in with \`npx wrangler login\`? Worker deployed?).`);
-  console.log(`Stored ${name} in Cloudflare.`);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
 }
-
-put("STRIPE_SECRET_KEY", stripeKey);
-put("ADMIN_TOKEN", token);
-console.log("Live secrets set. Check: npm run report -- --live");
+if (r.status !== 0) fail("wrangler deploy failed (logged in with `npx wrangler login`?).");
+console.log("Deployed with STRIPE_SECRET_KEY and ADMIN_TOKEN set. Later code changes: npx wrangler deploy");
+console.log("Check: npm run report -- --live");
