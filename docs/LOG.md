@@ -749,3 +749,5 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 
 - The owner pasted Stripe's "Agentic Commerce Seller Services (Preview)" terms (last modified 2026-09-28) and asked about concerns. A practical reading (not legal advice): no concern for test-mode use. Token rules (3.5: single authorization, no expired or revoked tokens) already match the design. The catalogue and brand licences (4, 5) apply only to catalogue or AI-platform listing. The merchant duties (3.2–3.4, 3.8, 3.9) matter only for real transactions.
 - **Owner decision (D27):** "remain free and in Stripe's sandbox mode". No real business, no real charge, no paid services. `PLAN.md` updated: the brief's real $1 charge and paid domain are dropped; the test-mode guards are permanent.
+
+- **2026-11-16:** the owner clarified that **a domain is the one allowed cost**; no legal work or business formation (D27a). Approved starting the Shared Payment Token prototype (plan step 4).

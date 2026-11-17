@@ -213,6 +213,10 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - The "go-live requirements" from reading the Shared Payment Token preview terms (receipts, a terms of service and privacy policy, sales tax, being merchant of record for real customers) **do not apply**: there are no real transactions.
   - The SPT preview terms were reviewed with the owner (not legal advice). For sandbox use they raise no concern. Sections 4 and 5 (catalogue and brand licences) apply only to catalogue or AI-platform listing, which isn't planned.
 
+## D27a. Clarification: a domain is the one allowed cost; no legal work or business formation
+- **Date:** 2026-11-16. **Owner:** "What I am willing to pay for is a domain. I don't want any legal work or business formation."
+- **Decision:** amends D27. **Buying a domain is allowed** (for example pdfsupplier.com, for a public sandbox demo). Everything else stays free and in Stripe's sandbox. No legal entity, no legal documents beyond what a free sandbox demo needs, no live payments.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

@@ -40,7 +40,7 @@ Make the messages my tools send back more helpful, using facts rather than comma
 - **Expected:** it may still get stuck on Stripe's page, because those problems aren't on my site. That is still a useful result: it shows which problems a store owner can fix and which need Stripe or the browser agent to change.
 - **Decided:** "without context" means **my own agent with the extra layer switched off**. The same agent is used every time, so results can be compared over time.
 
-### 4. Explore agentic commerce — 🔎 research done, awaiting my decision (2026-11-13)
+### 4. Explore agentic commerce — 🛠️ prototype approved (2026-11-16)
 Findings: `docs/research/AGENTIC-COMMERCE.md`. **Recommendation:** a test-mode prototype using **Shared Payment Tokens** through a new `pay_order` tool on my page, alongside the Stripe-page route. Nothing is built until I approve.
 
 - **Idea:** take payment through my own page instead of sending the agent to Stripe. My page would get a tool such as `pay_order`, which accepts a payment credential the agent has been given. My server charges it through Stripe behind the scenes.
@@ -59,8 +59,9 @@ Re-run Google's **stock** extension (no local patches) against the improved page
 
 ## Sandbox only, free only (decided 2026-11-14, D27)
 This stays an experiment: **Stripe sandbox/test mode permanently, and no paid services.**
-- **Dropped from the brief:** the real $1 charge, and buying the domain (unless free).
-- **If anything is made public later:** free hosting only, still sandbox-only, and abuse protection first (Q13).
+- **Dropped from the brief:** the real $1 charge.
+- **Allowed cost:** a domain (2026-11-16, D27a). No legal work or business formation.
+- **If anything is made public later:** a paid domain is fine; hosting free; still sandbox-only; abuse protection first (Q13).
 - The test-key guard and the agent's test-mode-only rule stay as permanent safeguards.
 
 ## Decisions (made 2026-11-13)
@@ -68,4 +69,5 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 - [x] "Without context" (Stage B) = my own agent with the extra layer switched off.
 - [x] My agent uses a **spending rule only**, no confirmation prompt. I start it from the terminal and it returns with the PDF.
 - [x] **Do not report** the Stripe and extension problems to Stripe or Google.
-- [x] **Sandbox and free only, permanently** (2026-11-14, D27). No real charge, no paid services.
+- [x] **Sandbox and free only, permanently** (2026-11-14, D27). No real charge, no paid services, **except a domain** (2026-11-16, D27a). No legal work or business formation.
+- [x] **Start the Shared Payment Token prototype** (2026-11-16).
