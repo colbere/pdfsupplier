@@ -779,3 +779,19 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - Agent: `agent/wallet.mjs` (test SPT per run), `--route token|stripe-page` (default token), a token-payment spending check, the post-payment navigation wait limited to other sites' tools, `spt_` redaction, and a `knowledge.md` note.
 - **Tests:** `node --check` OK. `tests/agent-policy.test.mjs` **22/22** (7 new token cases). New `tests/token-checks.sh` against the sandbox: **17/17**, including "same token again → 402 'not accepted by Stripe'" and "no payment token in the server log". Regression: auth 33/33, tools 20/20, purchase 26/26.
 - **Not yet run with the model:** that uses the owner's Anthropic credit, so it is the owner's dispatch.
+
+---
+
+## 2026-11-16 (UTC-7): Token route, owner's agent runs (both succeeded)
+
+| Run | Route | Context | Turns | Result |
+|---|---|---|---|---|
+| `2026-11-17T05-05-53-token-context-full` | token | full | 4 | sign_in → pay_with_token (spending rule allowed: run's own token) → get_download → report. **PDF correct** |
+| `2026-11-17T05-09-35-token-context-none` | token | none | 5 | sign_in → get_product → pay_with_token → get_download → report. **PDF correct** |
+| *(for comparison)* `2026-11-14T01-03-44-context-full` | stripe-page | full | 10 | including a 30 s form timeout and a cross-site redirect |
+| *(for comparison)* `2026-11-14T01-15-21-context-none` | stripe-page | none | 11 | ditto |
+
+- Store log: `pay_with_token: … stripe=succeeded -> paid` and `download: served PDF` for both orders. **Payment tokens in the store log: 0.** Records checked: 0 codes, 0 tokens, 0 keys.
+- **No human input during either run.** The owner hit an unrelated terminal error between runs (details not shared; resolved by restarting the terminal). It didn't affect the runs.
+- **Finding:** on the token route the whole purchase happens through **the store's own WebMCP tools**: no third-party page, no iframe tools, no timeouts, no navigation. Without context, the agent found `pay_with_token` from the page alone (it read `get_product`, which lists both ways to buy, then paid).
+- **What this still doesn't show:** whether an *outside* agent can obtain a token addressed to this store (a real agent needs its own Stripe account or a person's Link agent wallet, plus the store's Stripe profile ID), and whether Stripe requires a prior seller–agent relationship for that. Here the token came from the store's own sandbox test helper.

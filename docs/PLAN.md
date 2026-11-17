@@ -40,8 +40,8 @@ Make the messages my tools send back more helpful, using facts rather than comma
 - **Expected:** it may still get stuck on Stripe's page, because those problems aren't on my site. That is still a useful result: it shows which problems a store owner can fix and which need Stripe or the browser agent to change.
 - **Decided:** "without context" means **my own agent with the extra layer switched off**. The same agent is used every time, so results can be compared over time.
 
-### 4. Explore agentic commerce — 🛠️ prototype built and tested (2026-11-16); agent runs next
-Built: `pay_with_token` on my page plus the agent's test wallet (D28). Store and rule tests pass. Next: run the agent on the token route, with and without context.
+### 4. Explore agentic commerce — ✅ prototype works (2026-11-16)
+Built `pay_with_token` on my page plus the agent's test wallet (D28). **Both agent runs succeeded** (4 and 5 turns, against 10–11 on the Stripe-page route), with and without context. Open: how an *outside* agent would get a token for my store (its own Stripe account or a Link agent wallet, plus my Stripe profile ID), and whether Stripe requires a prior relationship.
 Findings: `docs/research/AGENTIC-COMMERCE.md`. **Recommendation:** a test-mode prototype using **Shared Payment Tokens** through a new `pay_order` tool on my page, alongside the Stripe-page route. Nothing is built until I approve.
 
 - **Idea:** take payment through my own page instead of sending the agent to Stripe. My page would get a tool such as `pay_order`, which accepts a payment credential the agent has been given. My server charges it through Stripe behind the scenes.
