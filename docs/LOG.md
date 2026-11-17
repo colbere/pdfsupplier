@@ -826,3 +826,4 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
   - The owner asked about "no raw visitors stored" and wants a **server log to analyse traffic** (design question pending).
   - Tests: public 48/48, tools 22/22.
   - A combined commit-and-push command was **blocked by the safety classifier**. Nothing ran. Pushes go back to asking the owner first.
+- **Visitor run** (`docs/test-runs/agent/2026-11-17T05-36-57-visitor-context-none.md`; no code, no payment details, no context; task "Buy the PDF from the store open in this tab and download it."): **success in 4 turns**. `get_product` + `get_test_payment_token` → `pay_with_token` (spending rule allowed: a token the store issued during this run) → `get_download` (596 bytes, correct) → report. It didn't use `say_hello` or `leave_feedback` (optional). Record: 0 codes, tokens or keys. **Step 1's local goal is met:** a stranger agent can buy from the page alone.
