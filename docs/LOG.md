@@ -753,3 +753,23 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - **2026-11-16:** the owner clarified that **a domain is the one allowed cost**; no legal work or business formation (D27a). Approved starting the Shared Payment Token prototype (plan step 4).
 
 - **2026-11-16:** the owner asked for a refresher and an options review before the Dashboard step. Docs re-checked; summary appended to `docs/research/AGENTIC-COMMERCE.md`.
+
+---
+
+## 2026-11-16 (UTC-7): Shared Payment Token prototype, Dashboard setup and a free sandbox probe
+
+**Owner, in the sandbox Dashboard:**
+- added **PaymentIntents: Write** and **Shared Payment Token: Write** to `pdf-supplier-local`; key unchanged (checked: `rk_test_`, length 107);
+- shared their public Stripe profile handle (for outside agents later; not recorded here).
+
+**Probe** (scratchpad `spt-probe.mjs`, `Stripe-Version: 2026-09-30.preview`, key never printed):
+- First run: **403 `more_permissions_required`**. Stripe's error named the missing permission: "**Shared Payment Token Test Helpers Write** (`shared_payment_token_test_helper_write`)". The docs don't list it. The owner added it (key unchanged).
+- Second run:
+```
+1. Create test SPT (limit 100 usd, 1 h)      ok: spt_…, livemode=false, usage_limits {currency usd, max_amount 100, expires_at …}
+2. Charge it 100                              ok: PaymentIntent pi_… status=succeeded amount=100 livemode=false
+3. Charge the same token again                refused: 400 "…already in a deactivated state."
+4. New token (limit 100), charge 101          refused: 400 "…greater than the remaining amount capturable with this shared payment granted token."
+5. Token 1 afterwards                         deactivated_reason=consumed
+```
+**Conclusion:** SPTs work in this sandbox with a restricted key holding **PaymentIntents Write + Shared Payment Token Write + Shared Payment Token Test Helpers Write**. Single use and the amount cap are enforced by Stripe. **Building** the `pay_with_token` tool and the agent's test wallet next.
