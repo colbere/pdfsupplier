@@ -832,3 +832,13 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
   - **Traffic log built:** one entry per request (time, method, path, tool, status, daily-scrambled visitor ID, country, network operator, browser description), written after the response via `ctx.waitUntil`. **No IPs or secrets**; download paths stored as `/download/[token]`. Capped at 5,000 a day, kept 30 days (clean-up alarm). Owner: `npm run traffic [-- --days N] [--csv]` (exports to git-ignored `traffic-export/`). The Worker's `fetch` now wraps a `route()` function so every response can be logged.
   - **Tests:** public-checks **56/56** (8 new traffic checks: admin-only, summary works, CSV has no raw IPs, tokens, download secrets or feedback text, and is git-ignored); auth 33, tools 22, purchase 25, token 17, policy 22.
   - Locally, country and network are empty (Cloudflare supplies them in production).
+
+---
+
+## 2026-11-16 (UTC-7): Go-live research (Cloudflare and WebMCP origin trial)
+
+The owner asked to start the go-live checks and whether they're likely to be accepted into the origin trial; they pasted the registration page and the trial blog post. Three parallel doc reads. Findings in **`docs/research/GO-LIVE.md`**:
+- **Origin trial:** "public and open to all developers"; no review step documented, so acceptance is very likely (it's a registration, not an application). Trial: Chrome 149–162, ends **Mar 29, 2027** (registration page). Tokens last 6 weeks and are renewed with feedback. Deployed as an `Origin-Trial` header; tick "match all subdomains".
+- **Cloudflare free plan:** over-limit gives errors, not charges (Workers 100k req/day; Durable Objects on Free, SQLite-backed: 100k requests, 100k rows written and 5M rows read per day, 5 GB). The domain needs a payment method (at cost).
+- **⚠️ Capacity finding:** the store makes several storage calls and writes per request, so free storage quotas could be exhausted by about 15–25k site requests a day (estimate), knocking the store offline until midnight UTC. **Fix before launch:** one storage call per request, fewer writes.
+- **Security:** whether Cloudflare overwrites a visitor-supplied `CF-Connecting-IP` is **not stated**; verify on the live site (global caps remain the backstop). Keep **Bot Fight Mode off** (it challenges automated traffic). AI agent policy defaults to Allow for new domains. Free WAF: 1 rate-limit rule (per IP, 10 s).
