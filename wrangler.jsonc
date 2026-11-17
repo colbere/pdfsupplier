@@ -18,10 +18,10 @@
 
   // Public, non-secret settings.
   // ORIGIN_TRIAL_TOKEN: Chrome's WebMCP origin-trial token for https://pdfsupplier.com (public by
-  // design; sent as an Origin-Trial header on the page). Empty until registered.
+  // design; sent as an Origin-Trial header on the page). Registered 2026-11-17; renew before expiry.
   // CANONICAL_HOST: www.<host> is redirected here.
   "vars": {
-    "ORIGIN_TRIAL_TOKEN": "",
+    "ORIGIN_TRIAL_TOKEN": "Ap3IwQzBOjUql+qldDI0QBeHzD8QXs1kvxczLQphZ9TIthvug8hKnB/CpW/365SHD5BzOrs9T8cGTjFTcpkKEQMAAABieyJvcmlnaW4iOiJodHRwczovL3BkZnN1cHBsaWVyLmNvbTo0NDMiLCJmZWF0dXJlIjoiV2ViTUNQIiwiZXhwaXJ5IjoxODA2MzY0ODAwLCJpc1N1YmRvbWFpbiI6dHJ1ZX0=",
     "CANONICAL_HOST": "pdfsupplier.com"
   },
 

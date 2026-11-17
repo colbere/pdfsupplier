@@ -872,3 +872,5 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 - Second attempt failed with Cloudflare error 10063 ("You need a workers.dev subdomain"), which hits new accounts. Opening Workers & Pages in the dashboard once fixed it. (A "Cloudflare Access / Zero Trust" prompt appeared on that page and is not needed.) `workers_dev` stays false.
 - Deployed version a63c5e89. Checked live: page 200 with CSP; `get_product` OK; `npm run report -- --live` works with the live admin password; `www` 301s to `https://pdfsupplier.com/` (the local DNS cache briefly said www didn't exist; Cloudflare DNS had it).
 - Still to do: origin-trial token, Bot Fight Mode off and one rate-limit rule, live security and purchase checks.
+- Origin-trial token registered by the owner (WebMCP, https://pdfsupplier.com:443, subdomains, expires 2027-03-30) and added to `wrangler.jsonc`. Deployed version 585452b5; the `Origin-Trial` header appeared live about a minute after deploy (propagation).
+- Owner added the Cloudflare rate-limit rule on `/api/`.
