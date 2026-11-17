@@ -13,6 +13,8 @@ export function isTestKey(key) {
 export function redact(text) {
   return String(text)
     .replace(/\b(sk|rk|pk)_(test|live)_[A-Za-z0-9*]+/g, "[REDACTED_KEY]")
+    // Shared Payment Tokens (spt_…) too: a Stripe error message can echo the token (review B3).
+    .replace(/\bspt_[A-Za-z0-9_]+/g, "[REDACTED_TOKEN]")
     .replace(/https:\/\/checkout\.stripe\.com\/\S+/g, "[REDACTED_URL]");
 }
 

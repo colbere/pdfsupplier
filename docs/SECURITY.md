@@ -21,7 +21,7 @@ The page invites AI agents, which also invites bots, scrapers and attempts to ma
 | Owner sign-in guessing | One-time 75-bit codes, 10-minute expiry, single use, lockout after 5 failures per 15 minutes, one generic error. | D6–D8 |
 | Emergencies | **Kill switch** (`npm run kill-switch -- on`) closes every public tool, deletes every session and refuses new visitors. `npm run unlock` resets limits. | `store.js` |
 | Secrets | The Stripe key, admin password and Anthropic key live in `.env` locally (git-ignored); the live site uses its **own** Stripe sandbox key and admin password (`STRIPE_SECRET_KEY_LIVE`, `ADMIN_TOKEN_LIVE` in `.env`), sent to Cloudflare's secret store by `npm run setup-live` without being displayed. **Never logged**, never in the page. The pre-commit guard blocks key-shaped text, `.env` files and the exact secret values. | D17 |
-| Payment tokens | Never logged or echoed by the server. Single-use and capped at $1.00 by Stripe. The agent's run records redact `spt_…`. | D28 |
+| Payment tokens | Never logged or echoed by the server: `redact()` strips `spt_…` from every Stripe error (D32). Single-use and capped at $1.00 by Stripe. The agent's run records redact `spt_…`. | D28 |
 | Storage piling up | A clean-up alarm every 6 hours removes expired sessions, download links and old rate-limit counters, plus orders older than 30 days. Feedback is capped at 1,000 entries. | `Store.alarm()` |
 | Visitor privacy | Visitors are identified only by a **SHA-256 of IP plus the current UTC day** (changes daily; raw IPs never stored). Nothing else is collected except what agents choose to send (`say_hello`, `leave_feedback`). Feedback asks agents not to include personal information. | `clientId` |
 

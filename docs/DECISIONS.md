@@ -296,3 +296,8 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 **Why:** the server is the gate and allows direct calls by design. Every wall applies either way. Blocking non-WebMCP clients isn't possible: anything a page script can call, an HTTP client can call too. Category 2 is still a meaningful result: the WebMCP tool definitions served as the agent's instructions.
 
 **Related:** Q19 (the hint naming `document.modelContext`) stays open: "maybe, we'll see" (owner, 2026-11-17).
+
+## D32: `redact()` also strips Shared Payment Tokens (2026-11-17, review B3)
+**Change:** `redact()` in `src/stripe.js` now replaces `spt_…` with `[REDACTED_TOKEN]`, as well as keys and checkout URLs. Every Stripe error passes through it (`StripeError`, `stripeFailure`), so a token echoed in any Stripe error message is never logged or returned. Before, only the `pay_with_token` path stripped tokens itself.
+**Why:** `docs/SECURITY.md` says payment tokens are never logged. The other Stripe error paths (e.g. `get_test_payment_token`, `check_order`) didn't guarantee it. Risk was low (sandbox, $1 cap, 15-minute life).
+**Tests:** `tests/redact.test.mjs` (5, made-up values). Local suites still pass: token 17, public 56, purchase 25, policy 22.

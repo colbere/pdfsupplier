@@ -1,3 +1,5 @@
 # Shell scripts must keep Unix line endings (LF) or they may fail to run.
 scripts/git-hooks/* text eol=lf
 *.sh text eol=lf
+# Patch files must keep Unix line endings (LF) or `git apply` may fail.
+*.diff text eol=lf
