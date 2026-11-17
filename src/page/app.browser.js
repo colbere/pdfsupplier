@@ -89,8 +89,35 @@
             `What it is: ${p.description}`,
             `Delivery: ${p.delivery}`,
             p.note,
-            "To buy it: create_checkout, then open_checkout to pay on Stripe's page, then check_order and get_download.",
+            "Two ways to buy it: (1) if you have a Stripe Shared Payment Token for this store (starts with spt_, " +
+              "limited to at least $1.00 USD), call pay_with_token, then get_download; or (2) create_checkout, then " +
+              "open_checkout to pay on Stripe's page, then check_order and get_download.",
           ].join("\n");
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "pay_with_token",
+      description:
+        "Buys the PDF ($1.00 USD, Stripe test mode) with a Stripe Shared Payment Token: a single-use payment " +
+        "credential starting with spt_, created for this store and limited to at least $1.00 USD. Creates an " +
+        "order, charges the token once and returns the order_id. Then call get_download. Requires being signed in.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          payment_token: { type: "string", description: "The Shared Payment Token to charge (starts with spt_)." },
+        },
+        required: ["payment_token"],
+      },
+      annotations: { readOnlyHint: false, consequentialHint: true, untrustedContentHint: false },
+      async execute({ payment_token } = {}) {
+        try {
+          const { data } = await callServer("/api/pay-with-token", { body: { payment_token } });
+          if (!data) return "Could not complete the payment.";
+          if (!data.ok) return (data.order_id ? `Order ${data.order_id}: ` : "") + (data.error || "The payment failed.");
+          return `Order ${data.order_id} is paid (${data.amount}, charged to the shared payment token). Call get_download with this order_id to get the PDF.`;
         } catch {
           return UNREACHABLE;
         }

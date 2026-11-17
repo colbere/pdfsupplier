@@ -773,3 +773,9 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 5. Token 1 afterwards                         deactivated_reason=consumed
 ```
 **Conclusion:** SPTs work in this sandbox with a restricted key holding **PaymentIntents Write + Shared Payment Token Write + Shared Payment Token Test Helpers Write**. Single use and the amount cap are enforced by Stripe. **Building** the `pay_with_token` tool and the agent's test wallet next.
+
+### Built: the Shared Payment Token route (D28)
+- Store: `pay_with_token` tool plus `/api/pay-with-token`; `check_order` handles token orders; `open_checkout` refuses them. `get_product` lists both ways to buy.
+- Agent: `agent/wallet.mjs` (test SPT per run), `--route token|stripe-page` (default token), a token-payment spending check, the post-payment navigation wait limited to other sites' tools, `spt_` redaction, and a `knowledge.md` note.
+- **Tests:** `node --check` OK. `tests/agent-policy.test.mjs` **22/22** (7 new token cases). New `tests/token-checks.sh` against the sandbox: **17/17**, including "same token again → 402 'not accepted by Stripe'" and "no payment token in the server log". Regression: auth 33/33, tools 20/20, purchase 26/26.
+- **Not yet run with the model:** that uses the owner's Anthropic credit, so it is the owner's dispatch.

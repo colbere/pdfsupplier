@@ -3,7 +3,10 @@
 import PAGE_HTML from "./page/index.html";
 import APP_JS from "./page/app.browser.js";
 import { hashCode, sha256Hex, PRODUCT } from "./shared.js";
-import { isTestKey, redact, createCheckoutSession, getCheckoutSession, StripeError } from "./stripe.js";
+import {
+  isTestKey, redact, createCheckoutSession, getCheckoutSession, StripeError,
+  isSharedPaymentToken, chargeSharedPaymentToken, getPaymentIntent,
+} from "./stripe.js";
 import { buildPdf } from "./pdf.js";
 export { Store } from "./store.js";
 
@@ -228,6 +231,23 @@ async function handleCheckOrder(request, env, sh) {
   if (!order) return json(NO_SUCH_ORDER, 404);
   if (order.status === "delivered") return json({ ok: true, order_id: orderId, status: "delivered" });
 
+  if (order.method === "token") {
+    // Token-paid order: ask Stripe about the PaymentIntent itself.
+    if (!order.paymentIntentId) return json({ ok: true, order_id: orderId, status: "unpaid", payment_status: "not charged" });
+    let pi;
+    try {
+      pi = await getPaymentIntent(env, order.paymentIntentId);
+    } catch (err) {
+      if (err instanceof StripeError) return stripeFailure("check_order", err);
+      throw err;
+    }
+    const paid = pi.status === "succeeded" && pi.amount === PRODUCT.unitAmountCents && pi.currency === PRODUCT.currency &&
+      pi.orderId === orderId && pi.id === order.paymentIntentId && !pi.livemode;
+    if (paid) await s.markPaid(orderId);
+    console.log(`check_order: ${orderId} (token) stripe=${pi.status} -> ${paid ? "paid" : "not paid"}`);
+    return json({ ok: true, order_id: orderId, status: paid ? "paid" : "unpaid", payment_status: pi.status });
+  }
+
   let cs;
   try {
     cs = await getCheckoutSession(env, order.stripeSessionId);
@@ -249,6 +269,9 @@ async function handleOpenCheckout(request, env, sh) {
   if (!orderId) return json({ ok: false, error: "order_id is missing or malformed. It looks like ord_ followed by 20 characters." }, 400);
   const order = await store(env).getOrderForSession(orderId, sh);
   if (!order) return json(NO_SUCH_ORDER, 404);
+  if (order.method === "token") {
+    return json({ ok: false, error: `Order ${orderId} is paid with a shared payment token, not on Stripe's checkout page. Call check_order instead.` }, 409);
+  }
   if (order.status !== "created") {
     return json({ ok: false, error: `Order ${orderId} is already paid. Call check_order, then get_download.` }, 409);
   }
@@ -260,6 +283,40 @@ async function handleOpenCheckout(request, env, sh) {
   }
   console.log(`open_checkout: ${orderId} -> navigating to Stripe`); // never log the URL
   return json({ ok: true, order_id: orderId, checkout_url: order.url });
+}
+
+// pay_with_token: creates an order and charges the agent's Shared Payment Token exactly once.
+// The token is a payment credential: it is never logged or echoed back.
+async function handlePayWithToken(request, env, sh) {
+  const body = await readJson(request);
+  const token = body && typeof body.payment_token === "string" ? body.payment_token.trim() : "";
+  if (!isSharedPaymentToken(token)) {
+    return json({ ok: false, error: "payment_token is missing or not a Shared Payment Token (it should start with spt_)." }, 400);
+  }
+  const s = store(env);
+  const orderId = randomOrderId();
+  const reserved = await s.reserveTokenOrder(sh, orderId);
+  if (!reserved.allowed) return json({ ok: false, error: reserved.error }, 429);
+
+  let pi;
+  try {
+    pi = await chargeSharedPaymentToken(env, { orderId, token });
+  } catch (err) {
+    if (err instanceof StripeError) {
+      console.log(`pay_with_token: ${orderId} Stripe refused (${err.status}) ${redact(err.message).replace(/spt_[A-Za-z0-9_]+/g, "spt_[…]")}`);
+      // Stripe's reason (e.g. token used, expired, over its limit) helps the agent; strip any token text.
+      const reason = redact(err.message).replace(/spt_[A-Za-z0-9_]+/g, "[token]").slice(0, 200);
+      return json({ ok: false, order_id: orderId, error: `The payment was not accepted by Stripe: ${reason}` }, 402);
+    }
+    throw err;
+  }
+  const paid = pi.status === "succeeded" && pi.amount === PRODUCT.unitAmountCents && pi.currency === PRODUCT.currency;
+  await s.recordTokenCharge(orderId, { paymentIntentId: pi.id, paid });
+  console.log(`pay_with_token: ${orderId} stripe=${pi.status} -> ${paid ? "paid" : "not paid"}`);
+  if (!paid) {
+    return json({ ok: false, order_id: orderId, status: "unpaid", error: `Stripe reported the payment as "${pi.status}", not completed.` }, 402);
+  }
+  return json({ ok: true, order_id: orderId, status: "paid", amount: PRODUCT.priceLabel });
 }
 
 async function handleGetDownload(request, env, url, sh) {
@@ -369,6 +426,7 @@ export default {
 
     if (pathname === "/api/product") return withSession(request, env, url, () => handleProduct());
     if (pathname === "/api/checkout") return withSession(request, env, url, (sh) => handleCreateCheckout(env, url, sh));
+    if (pathname === "/api/pay-with-token") return withSession(request, env, url, (sh) => handlePayWithToken(request, env, sh));
     if (pathname === "/api/open-checkout") return withSession(request, env, url, (sh) => handleOpenCheckout(request, env, sh));
     if (pathname === "/api/order") return withSession(request, env, url, (sh) => handleCheckOrder(request, env, sh));
     if (pathname === "/api/download") return withSession(request, env, url, (sh) => handleGetDownload(request, env, url, sh));

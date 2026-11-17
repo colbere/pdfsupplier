@@ -24,10 +24,17 @@ export class StripeError extends Error {
   }
 }
 
-async function stripeFetch(env, method, path, params, idempotencyKey) {
+// Shared Payment Tokens are a preview feature with their own API version (docs/research/AGENTIC-COMMERCE.md).
+const SPT_VERSION = "2026-09-30.preview";
+
+export function isSharedPaymentToken(value) {
+  return typeof value === "string" && /^spt_[A-Za-z0-9_]{6,200}$/.test(value);
+}
+
+async function stripeFetch(env, method, path, params, idempotencyKey, version = STRIPE_VERSION) {
   const headers = {
     Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-    "Stripe-Version": STRIPE_VERSION,
+    "Stripe-Version": version,
   };
   let body;
   if (params) {
@@ -69,6 +76,34 @@ export async function createCheckoutSession(env, { orderId, origin }) {
   }, `create-${orderId}`);
   if (s.livemode) throw new StripeError(500, "Stripe returned a LIVE session. Refusing.", "live_mode");
   return { id: s.id, url: s.url, expiresAt: expiresAt * 1000 };
+}
+
+// Charges a Shared Payment Token for the one product, exactly once (Stripe enforces single use
+// and the token's own amount cap). Returns { id, status, amount, currency, livemode }.
+export async function chargeSharedPaymentToken(env, { orderId, token }) {
+  const pi = await stripeFetch(env, "POST", "/payment_intents", {
+    amount: String(PRODUCT.unitAmountCents),
+    currency: PRODUCT.currency,
+    "payment_method_data[shared_payment_granted_token]": token,
+    confirm: "true",
+    description: PRODUCT.name,
+    "metadata[order_id]": orderId,
+  }, `pay-${orderId}`, SPT_VERSION);
+  if (pi.livemode) throw new StripeError(500, "Stripe returned a LIVE PaymentIntent. Refusing.", "live_mode");
+  return { id: pi.id, status: pi.status, amount: pi.amount, currency: pi.currency, livemode: pi.livemode };
+}
+
+// Returns the fields we need from a PaymentIntent.
+export async function getPaymentIntent(env, id) {
+  const pi = await stripeFetch(env, "GET", `/payment_intents/${encodeURIComponent(id)}`, null, null, SPT_VERSION);
+  return {
+    id: pi.id,
+    status: pi.status, // succeeded | processing | requires_action | requires_payment_method | canceled | ...
+    amount: pi.amount,
+    currency: pi.currency,
+    orderId: pi.metadata && pi.metadata.order_id,
+    livemode: pi.livemode,
+  };
 }
 
 // Returns the fields we need from a Checkout Session.

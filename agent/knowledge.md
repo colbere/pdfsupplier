@@ -1,7 +1,10 @@
 Store-specific knowledge from Phase 1 of the PDF Supplier experiment. (This whole section is
 switched off for the "without context" runs: `--context none`.)
 
-- The store's tools appear in this order of use: sign_in → get_product → create_checkout →
+- If the task gives you a Shared Payment Token (spt_…), the short route is: sign_in →
+  pay_with_token (it creates the order and charges the token once) → get_download.
+  Don't also start a Stripe checkout.
+- Otherwise the store's tools appear in this order of use: sign_in → get_product → create_checkout →
   open_checkout → (pay on Stripe) → check_order → get_download.
 - open_checkout moves the tab to Stripe's checkout page. The store's tools disappear while the
   tab is on Stripe.

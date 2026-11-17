@@ -36,6 +36,26 @@ export function makePolicy({ storeOrigin, maxCents, currency, maxPurchases, requ
     },
 
     /**
+     * Shared Payment Token route: a consequential tool on the STORE itself (pay_with_token).
+     * Allowed only on the store's page, once, and only with the wallet's own token.
+     * (The token itself also caps the amount, currency and expiry; Stripe enforces it.)
+     */
+    checkTokenPayment({ tool, pageOrigin, input, walletToken }) {
+      if (paymentAttempts >= maxPurchases) {
+        return { ok: false, reason: `the spending rule allows ${maxPurchases} purchase(s) and that limit has been used` };
+      }
+      if (tool.origin !== storeOrigin || pageOrigin !== storeOrigin) {
+        return { ok: false, reason: `token payments are only allowed on ${storeOrigin}` };
+      }
+      if (!walletToken) return { ok: false, reason: "this run has no wallet token" };
+      if (!input || input.payment_token !== walletToken) {
+        return { ok: false, reason: "only the payment token issued to this run may be used" };
+      }
+      paymentAttempts++;
+      return { ok: true };
+    },
+
+    /**
      * Decide whether a consequential tool may run. `summaryTool` is the order-summary tool
      * in the same frame, and `runTool` runs a tool and returns { kind, value }.
      * Returns { ok: true, summary } or { ok: false, reason }.

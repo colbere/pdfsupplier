@@ -168,6 +168,37 @@ export class Store extends DurableObject {
     });
   }
 
+  // ---- Token-paid orders (Shared Payment Token route) ----
+
+  // Reserves a new token order for this session, respecting the per-session cap.
+  // Returns { allowed: true } or { allowed: false, error }.
+  async reserveTokenOrder(sessionHash, orderId) {
+    const s = this.ctx.storage;
+    const listKey = `sessorders:${sessionHash}`;
+    const ids = (await s.get(listKey)) || [];
+    if (ids.length >= MAX_ORDERS_PER_SESSION) {
+      return { allowed: false, error: `This session has reached the limit of ${MAX_ORDERS_PER_SESSION} orders.` };
+    }
+    ids.push(orderId);
+    await s.put({
+      [`order:${orderId}`]: { sessionHash, method: "token", paymentIntentId: null, status: "created", createdAt: Date.now() },
+      [listKey]: ids,
+    });
+    return { allowed: true };
+  }
+
+  async recordTokenCharge(orderId, { paymentIntentId, paid }) {
+    const s = this.ctx.storage;
+    const o = await s.get(`order:${orderId}`);
+    if (!o) return;
+    o.paymentIntentId = paymentIntentId;
+    if (paid && o.status === "created") {
+      o.status = "paid";
+      o.paidAt = Date.now();
+    }
+    await s.put(`order:${orderId}`, o);
+  }
+
   // Returns the order only if it belongs to this session.
   async getOrderForSession(orderId, sessionHash) {
     const o = await this.ctx.storage.get(`order:${orderId}`);

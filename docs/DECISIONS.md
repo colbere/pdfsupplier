@@ -217,6 +217,24 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 - **Date:** 2026-11-16. **Owner:** "What I am willing to pay for is a domain. I don't want any legal work or business formation."
 - **Decision:** amends D27. **Buying a domain is allowed** (for example pdfsupplier.com, for a public sandbox demo). Everything else stays free and in Stripe's sandbox. No legal entity, no legal documents beyond what a free sandbox demo needs, no live payments.
 
+## D28. Shared Payment Token route: `pay_with_token` on the store, and a test wallet for the agent
+- **Date:** 2026-11-16. **Approved by the owner** ("continue with option A"). Research: `docs/research/AGENTIC-COMMERCE.md`.
+- **Store:**
+  - New WebMCP tool **`pay_with_token(payment_token)`**: `consequentialHint: true`, sign-in only.
+  - `POST /api/pay-with-token` (through `withSession`) **creates the order and charges the token once**: `PaymentIntent` with `payment_method_data[shared_payment_granted_token]`, $1.00 USD, `confirm=true`, `metadata[order_id]`, `Idempotency-Key: pay-<order>`, `Stripe-Version: 2026-09-30.preview`.
+  - It refuses a LIVE result. Paid only when `succeeded` and the amount and currency match.
+  - `check_order` verifies token orders against the PaymentIntent (status, amount, currency, `metadata.order_id`, id, not live). `open_checkout` refuses token orders (409). `get_download` is unchanged.
+  - **The token is a payment credential: it is never logged or echoed.** Stripe's refusal reason is passed back with any token text removed.
+- **Why one step (create and pay) instead of the plan's `pay_order(order_id, …)`:** fewer calls for an agent and no half-finished orders. The token is single-use anyway.
+- **Stripe key:** the restricted test key now holds Checkout Sessions Write, **PaymentIntents Write, Shared Payment Token Write, and Shared Payment Token Test Helpers Write**. The last one is undocumented; Stripe's 403 named it.
+- **Agent:**
+  - `--route token` (new default) or `--route stripe-page`.
+  - **Test wallet** (`agent/wallet.mjs`): one sandbox SPT per run from Stripe's test helper (`pm_card_visa`, limit = the spending-rule maximum, 15-minute expiry). **This is a testing shortcut**: it uses the store's own test key. A real outside agent would get its token from its own Stripe account or a person's Link agent wallet, addressed to the store's Stripe profile.
+  - **Spending rule** `checkTokenPayment`: a consequential tool on the store page only, once per run (shared with the Stripe-page route), and **only with the run's own token**.
+  - The 30 s "wait for the tab to come back" now applies only to consequential tools from **other** sites (the store's tool doesn't navigate).
+  - The run record redacts `spt_…`. `knowledge.md` gains a token-route note.
+- **Tests:** `tests/token-checks.sh` **17/17** (sandbox: pay, verify, deliver, single use, isolation, cross-origin, no token in the log); `tests/agent-policy.test.mjs` **22/22**; the earlier suites still pass (33/20/26).
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

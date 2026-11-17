@@ -46,9 +46,10 @@ All commands run in a terminal opened in this folder.
 ### Your own agent (Phase 2)
 With the store running (`npm run dev`), in a second terminal:
 ```
-npm run agent                    # with the store-specific knowledge (Stage A)
-npm run agent -- --context none  # without it (Stage B)
-npm run agent -- --show          # watch the Chrome window
+npm run agent                              # pay with a Shared Payment Token on the store (default route)
+npm run agent -- --route stripe-page       # pay on Stripe's checkout page instead
+npm run agent -- --context none            # without the store-specific knowledge (Stage B)
+npm run agent -- --show                    # watch the Chrome window
 ```
 It makes its own sign-in code, buys the PDF in Stripe test mode, and prints where the PDF was saved. The spending rule (at most $1.00, one purchase, this store and Stripe only, test mode only) is enforced in `agent/policy.mjs`. Each run writes a redacted record to `docs/test-runs/agent/`. It needs `ANTHROPIC_API_KEY` in `.env`.
 
@@ -56,7 +57,7 @@ It makes its own sign-in code, buys the PDF in Stripe test mode, and prints wher
 The agent is Google's [Example Agentic Chrome Extension](https://github.com/GoogleChromeLabs/webmcp-extension) (commit `051a93c`), cloned **next to** this folder. It needs the local changes in [docs/extension-patch.diff](docs/extension-patch.diff) (apply with `git apply` inside the clone, then `npm install`, `npm run build`, `npm run server`). Its own `.env` holds `ANTHROPIC_API_KEY` (you paste it yourself) and `MODEL=anthropic:claude-opus-5-5`.
 
 ### Tests
-With the site running: `bash tests/auth-checks.sh`, `bash tests/tools-checks.sh` and `bash tests/purchase-checks.sh`. The agent's spending rule: `node --test tests/agent-policy.test.mjs`.
+With the site running: `bash tests/auth-checks.sh`, `bash tests/tools-checks.sh`, `bash tests/purchase-checks.sh` and `bash tests/token-checks.sh`. The agent's spending rule: `node --test tests/agent-policy.test.mjs`.
 
 ## Project documents
 

@@ -45,6 +45,33 @@ test("allows only one purchase per run", async () => {
   assert.equal((await check(p)).ok, false);
 });
 
+// ---- Shared Payment Token route (pay_with_token on the store itself) ----
+const STORE = "http://localhost:8787";
+const storeTool = { origin: STORE, annotations: { consequentialHint: true } };
+const tokenCheck = (p, over = {}) =>
+  p.checkTokenPayment({ tool: storeTool, pageOrigin: STORE, input: { payment_token: "spt_wallet123" }, walletToken: "spt_wallet123", ...over });
+
+test("token route: allows paying on the store with the run's own token", () => {
+  assert.equal(tokenCheck(mk()).ok, true);
+});
+for (const [label, over] of [
+  ["a different token", { input: { payment_token: "spt_someoneelse" } }],
+  ["no token in the call", { input: {} }],
+  ["a run without a wallet token", { walletToken: "" }],
+  ["the store tool while the tab is elsewhere", { pageOrigin: "https://evil.example" }],
+  ["a consequential tool from another site", { tool: { ...storeTool, origin: "https://evil.example" } }],
+]) {
+  test(`token route: refuses ${label}`, () => {
+    assert.equal(tokenCheck(mk(), over).ok, false);
+  });
+}
+test("token route: one purchase per run, shared with the Stripe-page route", async () => {
+  const p = mk();
+  assert.equal(tokenCheck(p).ok, true);
+  assert.equal(tokenCheck(p).ok, false);
+  assert.equal((await check(p)).ok, false); // the Stripe page can't add a second purchase either
+});
+
 test("only consequential tools need the payment check", () => {
   const p = mk();
   assert.equal(p.needsPaymentCheck(payTool), true);
