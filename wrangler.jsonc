@@ -1,9 +1,29 @@
-// Wrangler settings for The PDF Supplier (Phase 1: local only, never deployed).
+// Wrangler settings for The PDF Supplier.
+// Local: `npm run dev` (http://localhost:8787). Live: `npx wrangler deploy` to pdfsupplier.com
+// (Stripe SANDBOX only; see docs/DECISIONS.md D27, D29 and docs/SECURITY.md).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "pdf-supplier",
   "main": "src/index.js",
   "compatibility_date": "2026-11-01",
+
+  // One public origin only: the custom domain. The default *.workers.dev address and preview
+  // URLs are switched off, so cookies, limits and the origin-trial token all use one origin.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "pdfsupplier.com", "custom_domain": true },
+    { "pattern": "www.pdfsupplier.com", "custom_domain": true }
+  ],
+
+  // Public, non-secret settings.
+  // ORIGIN_TRIAL_TOKEN: Chrome's WebMCP origin-trial token for https://pdfsupplier.com (public by
+  // design; sent as an Origin-Trial header on the page). Empty until registered.
+  // CANONICAL_HOST: www.<host> is redirected here.
+  "vars": {
+    "ORIGIN_TRIAL_TOKEN": "",
+    "CANONICAL_HOST": "pdfsupplier.com"
+  },
 
   // Import the page HTML and the browser script as plain text strings
   // so the Worker can serve them. (.html is text by default; .browser.js is not.)
@@ -27,6 +47,10 @@
 
   "dev": {
     "port": 8787,
-    "ip": "localhost"
+    "ip": "localhost",
+    // Without this, `wrangler dev` presents requests as coming to the first route's domain
+    // (pdfsupplier.com), so locally built links would point at the live site.
+    "host": "localhost:8787",
+    "local_protocol": "http"
   }
 }

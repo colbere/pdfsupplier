@@ -849,3 +849,17 @@ The owner asked to start the go-live checks and whether they're likely to be acc
 - **Measured** with Wrangler's local observability query (3 requests: page, `get_product`, `get_stats`): **7 DO subrequests in total** (2, 2 and 3), with 6 put operations (about 2–3 rows each).
 - **Estimated capacity:** about 33k requests a day before the free rows-written limit (before: about 15k). Rate-limited floods cost DO requests but no writes.
 - **Tests after the fix:** public 56/56, auth 33/33, tools 22/22, purchase 25/25, token 17/17, policy 22/22.
+
+---
+
+## 2026-11-16 (UTC-7): Go-live code; the owner has a Cloudflare account and bought the domain
+
+The owner reported signing up for Cloudflare and buying the domain (assumed **pdfsupplier.com**, to be confirmed).
+- **`wrangler.jsonc`:** `workers_dev: false`, `preview_urls: false` (one public origin). Custom-domain routes for `pdfsupplier.com` and `www.pdfsupplier.com`. Public `vars`: `ORIGIN_TRIAL_TOKEN` (empty until registered) and `CANONICAL_HOST`.
+- **Worker:** `www.` redirects (301) to the bare domain. The page sends an `Origin-Trial` header when a valid-looking token is configured.
+- **Owner commands:** `--live` points them at the live site with a separate `ADMIN_TOKEN_LIVE`. **`npm run setup-live`** generates that password into `.env` and pipes it to `wrangler secret put ADMIN_TOKEN` without displaying it.
+- **Bug found by the test suites:** with routes configured, `wrangler dev` presented requests as coming to `pdfsupplier.com`, so locally built download links pointed at the (not yet live) real domain (public 54/56, token 16/17). Fixed with `dev.host: "localhost:8787"` and `local_protocol: "http"`, then a dev-server restart.
+- **Second test failure:** "traffic summary missing tools". Cause: `npm run traffic` listed only the top 10 tools, and after a day of tests `get_test_payment_token` ranked 11th. Fixed by listing all tools (the store has 13).
+- **Unverified locally:** the www redirect (local dev doesn't present the www host). To check on the live site.
+- `npx wrangler deploy --dry-run`: 74.88 KiB (gzip 20.47 KiB); bindings STORE, ORIGIN_TRIAL_TOKEN, CANONICAL_HOST.
+- **Tests:** public 56, auth 33, tools 22, purchase 25, token 17, policy 22. All pass.

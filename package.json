@@ -14,7 +14,8 @@
     "unlock": "node scripts/unlock.mjs",
     "agent": "node agent/run.mjs",
     "report": "node scripts/report.mjs",
-    "traffic": "node scripts/traffic.mjs"
+    "traffic": "node scripts/traffic.mjs",
+    "setup-live": "node scripts/setup-live.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.162.0"

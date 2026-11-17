@@ -644,6 +644,11 @@ async function route(request, env) {
     const { pathname } = url;
     const method = request.method;
 
+    // One canonical origin: www.<host> redirects to <host> (path kept, query dropped).
+    if (env.CANONICAL_HOST && url.hostname === `www.${env.CANONICAL_HOST}`) {
+      return new Response(null, { status: 301, headers: { Location: `https://${env.CANONICAL_HOST}${pathname}`, ...SECURITY_HEADERS } });
+    }
+
     // ---- The gate: ONE storage call for the page, every API call and downloads ----
     const isPage = pathname === "/" && method === "GET";
     if (isPage || pathname.startsWith("/api/") || pathname.startsWith("/download/")) {
@@ -672,7 +677,11 @@ async function route(request, env) {
     }
 
     if (pathname === "/" && (method === "GET" || method === "HEAD")) {
-      return respond(PAGE_HTML, "text/html; charset=utf-8");
+      // Chrome's WebMCP origin trial: makes document.modelContext available to ordinary Chrome
+      // visitors on this origin (no flag needed). The token is public by design.
+      const ot = typeof env.ORIGIN_TRIAL_TOKEN === "string" && /^[A-Za-z0-9+/=]{20,2000}$/.test(env.ORIGIN_TRIAL_TOKEN)
+        ? { "Origin-Trial": env.ORIGIN_TRIAL_TOKEN } : {};
+      return respond(PAGE_HTML, "text/html; charset=utf-8", 200, ot);
     }
 
     if (pathname === "/app.js" && (method === "GET" || method === "HEAD")) {

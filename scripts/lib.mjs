@@ -5,7 +5,12 @@ import { dirname, join } from "node:path";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const ENV_PATH = join(ROOT, ".env");
-export const BASE_URL = process.env.PDFS_BASE_URL || "http://localhost:8787";
+
+// `--live` (anywhere in the command) points the owner commands at the live site, using the
+// separate live admin password ADMIN_TOKEN_LIVE from .env (created by `npm run setup-live`).
+export const LIVE = process.argv.includes("--live");
+export const LIVE_URL = process.env.PDFS_LIVE_URL || "https://pdfsupplier.com";
+export const BASE_URL = LIVE ? LIVE_URL : process.env.PDFS_BASE_URL || "http://localhost:8787";
 
 // Minimal .env parser: KEY=value lines, # comments, optional quotes.
 export function readEnv() {
@@ -26,10 +31,13 @@ export function fail(msg) {
   process.exit(1);
 }
 
-// Calls the local server's admin API with ADMIN_TOKEN from .env.
+// Calls the server's admin API (local, or live with --live).
 export async function admin(path, method = "GET", body) {
-  const token = readEnv().ADMIN_TOKEN;
-  if (!token || token.length < 32) fail("ADMIN_TOKEN is missing from .env. Run `npm run setup` first.");
+  const env = readEnv();
+  const token = LIVE ? env.ADMIN_TOKEN_LIVE : env.ADMIN_TOKEN;
+  if (!token || token.length < 32) {
+    fail(LIVE ? "ADMIN_TOKEN_LIVE is missing from .env. Run `npm run setup-live` first." : "ADMIN_TOKEN is missing from .env. Run `npm run setup` first.");
+  }
   let res;
   try {
     res = await fetch(BASE_URL + path, {

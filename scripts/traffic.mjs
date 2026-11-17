@@ -42,7 +42,7 @@ for (const e of rows) {
   visitorsPerDay.get(d).add(e.v);
 }
 show("Distinct visitors per day (scrambled IDs; they change daily)", [...visitorsPerDay].map(([d, s]) => [d, s.size]).sort((a, b) => a[0].localeCompare(b[0])), 60);
-show("Tools called", tally("tool"));
+show("Tools called", tally("tool"), 50); // the store has 13 tools: show them all
 show("Pages and paths", tally("p"));
 show("Result codes (429 = limited, 503 = kill switch)", tally("s"));
 show("Networks (operator of the visitor's connection)", tally("n"));
