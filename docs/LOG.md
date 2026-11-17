@@ -820,3 +820,9 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
   - Proven: a visitor buys and downloads without sign-in; orders isolated; names and feedback never in stats or the server log; feedback limited **per visitor**; 11th wrong admin password in an hour → 429; the kill switch closes everything and ends visitor sessions.
 - **Bugs caught along the way:** shell quoting broke two of my ad-hoc check one-liners (replaced with a real in-Chrome tool listing).
 - **Waiting:** a visitor-route agent run (the owner's Anthropic credit) and the owner's approval of new page text.
+- **2026-11-16, owner changes:**
+  - Admin brute-force cut-off lowered from 10 to **5 wrong tries per visitor per hour** (`ADMIN_FAILS_PER_HOUR`). The test now checks attempts 1–5 → 401, the 6th → 429, and that **the correct password is also refused** from that visitor for the rest of the hour.
+  - **Page text updated** (paragraph 2, owner-approved wording: "Any AI agent is welcome to try buying it…"). "prove who it's acting for" in paragraph 1 kept pending the owner's answer.
+  - The owner asked about "no raw visitors stored" and wants a **server log to analyse traffic** (design question pending).
+  - Tests: public 48/48, tools 22/22.
+  - A combined commit-and-push command was **blocked by the safety classifier**. Nothing ran. Pushes go back to asking the owner first.

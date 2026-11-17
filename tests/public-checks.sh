@@ -73,8 +73,11 @@ echo "$REPORT" | grep -q "public-checks other visitor" && ok "npm run report sho
 echo "$REPORT" | grep -q "TestBot" && ok "npm run report shows the hello names" || bad "report missing hellos"
 
 echo "== 7. Brute-forcing the admin password is cut off (as a test visitor)"
-for i in $(seq 1 10); do curl -s -o /dev/null -H 'CF-Connecting-IP: 198.51.100.21' -H 'Authorization: Bearer wrongwrongwrongwrongwrongwrongwrong' "$B/admin/status"; done
-expect "11th wrong attempt this hour -> 429" 429 "$(curl -s -o /dev/null -w '%{http_code}' -H 'CF-Connecting-IP: 198.51.100.21' -H 'Authorization: Bearer wrongwrongwrongwrongwrongwrongwrong' "$B/admin/status")"
+for i in $(seq 1 5); do
+  expect "wrong attempt #$i -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' -H 'CF-Connecting-IP: 198.51.100.21' -H 'Authorization: Bearer wrongwrongwrongwrongwrongwrongwrong' "$B/admin/status")"
+done
+expect "6th attempt this hour -> 429 (cut off after 5)" 429 "$(curl -s -o /dev/null -w '%{http_code}' -H 'CF-Connecting-IP: 198.51.100.21' -H 'Authorization: Bearer wrongwrongwrongwrongwrongwrongwrong' "$B/admin/status")"
+expect "...even the RIGHT password is refused from that visitor now" 429 "$(curl -s -o /dev/null -w '%{http_code}' -H 'CF-Connecting-IP: 198.51.100.21' -H "Authorization: Bearer $(grep -E '^ADMIN_TOKEN=' .env | cut -d= -f2- | tr -d '\r')" "$B/admin/status")"
 
 echo "== 8. Kill switch closes the public store"
 npm run --silent kill-switch -- on >/dev/null

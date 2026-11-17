@@ -66,7 +66,7 @@ const LIMITS = {
   hellos:     { name: "hellos",           perVisitor: 20,  global: 3000,  windowMs: DAY },
   feedback:   { name: "feedback",         perVisitor: 5,   global: 300,   windowMs: DAY },
 };
-const ADMIN_FAILS_PER_HOUR = 10;
+const ADMIN_FAILS_PER_HOUR = 5; // owner's choice (2026-11-16)
 const VISITS_COUNTED_PER_DAY = 50000;
 
 async function clientId(request) {
