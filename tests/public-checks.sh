@@ -96,6 +96,23 @@ else
   echo "  (skipped: set PDFS_SERVER_LOG to the wrangler output file)"
 fi
 
+echo "== 10. Traffic log (owner-only, no raw IPs, no secrets)"
+sleep 2 # entries are written just after each response
+expect "traffic log without the admin token -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' -H 'CF-Connecting-IP: 198.51.100.30' "$B/admin/traffic")"
+TRAFFIC=$(npm run --silent traffic -- --days 1 --csv 2>&1)
+echo "$TRAFFIC" | grep -q "get_test_payment_token" && ok "npm run traffic summarises tool calls" || bad "traffic summary missing tools"
+CSV=$(echo "$TRAFFIC" | grep -oE 'CSV written: .*' | sed 's/CSV written: //')
+if [ -n "$CSV" ] && [ -f "$CSV" ]; then
+  ok "CSV export written (git-ignored folder)"
+  grep -qE '198\.51\.100\.|203\.0\.113\.' "$CSV" && bad "CSV contains a raw test IP address" || ok "CSV contains no raw IP addresses"
+  grep -qE 'spt_[A-Za-z0-9]{6,}' "$CSV" && bad "CSV contains a payment token" || ok "CSV contains no payment tokens"
+  grep -qE '/download/[A-Za-z0-9_-]{20,}' "$CSV" && bad "CSV contains a download secret" || ok "download links logged as /download/[token]"
+  grep -q 'public-checks' "$CSV" && bad "CSV contains feedback text" || ok "CSV contains no feedback text"
+  git check-ignore -q "$CSV" && ok "export file is git-ignored" || bad "export file is NOT git-ignored"
+else
+  bad "no CSV export produced"
+fi
+
 npm run --silent unlock >/dev/null; rm -f "$J1" "$J2" /tmp/pdfs_body
 echo ""
 echo "RESULT: $PASS passed, $FAILN failed"

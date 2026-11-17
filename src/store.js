@@ -17,9 +17,12 @@
 //   "stat:<name>"        -> count                       public counters (get_stats)
 //   "hello:<label>"      -> count                       self-reported agent names (owner-only view)
 //   "fb:<time>:<rand>"   -> { at, label, text }         private feedback (owner-only view), capped
+//   "log:<time>:<rand>"  -> { t, m, p, tool, s, v, c, n, a }  traffic log (owner-only), no raw IPs, 30 days
 import { DurableObject } from "cloudflare:workers";
 
 export const FEEDBACK_MAX_STORED = 1000;          // total feedback entries kept
+export const TRAFFIC_LOG_PER_DAY = 5000;          // traffic-log entries per day (then logging pauses)
+const TRAFFIC_KEEP_MS = 30 * 24 * 60 * 60 * 1000; // traffic log kept 30 days
 const RL_KEEP_MS = 2 * 24 * 60 * 60 * 1000;       // rate-limit buckets kept 2 days
 const ORDER_KEEP_MS = 30 * 24 * 60 * 60 * 1000;   // orders kept 30 days
 const CLEANUP_EVERY_MS = 6 * 60 * 60 * 1000;      // cleanup alarm cadence
@@ -229,6 +232,25 @@ export class Store extends DurableObject {
     return { ok: true };
   }
 
+  // ---- Traffic log (owner-only; no raw IPs; see docs/SECURITY.md) ----
+
+  async logTraffic(entry) {
+    // Caps protect storage under a flood: logging simply stops for the rest of the day.
+    if (!(await this.hit("log-cap", "all", TRAFFIC_LOG_PER_DAY, 86_400_000))) return;
+    const key = `log:${String(Date.now()).padStart(15, "0")}:${crypto.randomUUID().slice(0, 6)}`;
+    await this.ctx.storage.put(key, entry);
+    await this.#ensureCleanup();
+  }
+
+  async readTraffic({ startAfter, limit = 2000 } = {}) {
+    const opts = { prefix: "log:", limit: Math.min(limit, 5000) };
+    if (startAfter) opts.startAfter = startAfter;
+    const page = await this.ctx.storage.list(opts);
+    const entries = [...page.values()];
+    const last = [...page.keys()].pop();
+    return { entries, next: entries.length === opts.limit ? last : null };
+  }
+
   // ---- Owner-only views (admin API) ----
 
   async ownerReport({ feedbackLimit = 50 } = {}) {
@@ -259,6 +281,8 @@ export class Store extends DurableObject {
     }
     for (const [k, v] of await s.list({ prefix: "session:" })) if (now - v.lastSeen > SESSION_IDLE_MS) doomed.push(k);
     for (const [k, v] of await s.list({ prefix: "dl:" })) if (v.expiresAt <= now) doomed.push(k);
+    // Traffic log: keys are log:<15-digit ms>:<rand>, so old entries come first.
+    for (const [k] of await s.list({ prefix: "log:", end: `log:${String(now - TRAFFIC_KEEP_MS).padStart(15, "0")}` })) doomed.push(k);
     for (const [k, v] of await s.list({ prefix: "order:" })) if (now - v.createdAt > ORDER_KEEP_MS) doomed.push(k);
     for (const [k, v] of await s.list({ prefix: "sessorders:" })) {
       const anyLive = await s.get(v.map((id) => `order:${id}`));

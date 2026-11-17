@@ -207,6 +207,12 @@ async function handleAdmin(request, env, pathname) {
   if (pathname === "/admin/report" && request.method === "GET") {
     return json({ ok: true, ...(await s.ownerReport({ feedbackLimit: 100 })) });
   }
+  if (pathname === "/admin/traffic" && request.method === "GET") {
+    const u = new URL(request.url);
+    const startAfter = u.searchParams.get("after") || undefined;
+    if (startAfter && !/^log:\d{15}:[0-9a-f-]{1,8}$/.test(startAfter)) return json({ ok: false, error: "Bad cursor." }, 400);
+    return json({ ok: true, ...(await s.readTraffic({ startAfter, limit: Number(u.searchParams.get("limit")) || 2000 })) });
+  }
   if (pathname === "/admin/code" && request.method === "POST") {
     const body = await readJson(request);
     if (!body || typeof body.hash !== "string" || !/^[0-9a-f]{64}$/.test(body.hash)) {
@@ -574,8 +580,43 @@ const API_TOOL_NAMES = {
   "/api/feedback": "leave_feedback", "/api/sign-out": "sign_out",
 };
 
+// ---- Traffic log (owner-only; docs/SECURITY.md) ----
+// One entry per request, written after the response is sent. No raw IPs, no secrets:
+// download links are recorded as /download/[token]; headers like Authorization are never read here.
+async function logTraffic(request, env, url, status) {
+  try {
+    if (url.pathname === "/app.js") return;
+    const path = url.pathname.startsWith("/download/") ? "/download/[token]" : url.pathname.slice(0, 80);
+    const cf = request.cf || {};
+    await store(env).logTraffic({
+      t: new Date().toISOString(),
+      m: request.method,
+      p: path,
+      tool: API_TOOL_NAMES[url.pathname] || null,
+      s: status,
+      v: (await clientId(request)).slice(0, 12),
+      c: typeof cf.country === "string" ? cf.country.slice(0, 2) : null,
+      n: typeof cf.asOrganization === "string" ? cf.asOrganization.slice(0, 80) : null,
+      a: cleanText(request.headers.get("User-Agent") || "", 160, { singleLine: true }) || null,
+    });
+  } catch (err) {
+    console.log("traffic log: write failed");
+  }
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const response = await route(request, env);
+    if (ctx && typeof ctx.waitUntil === "function" && isTestKey(env.STRIPE_SECRET_KEY)) {
+      ctx.waitUntil(logTraffic(request, env, url, response.status));
+    }
+    return response;
+  },
+};
+
+async function route(request, env) {
+  {
     // Hard rule 1: never run with anything but a Stripe TEST key.
     if (!isTestKey(env.STRIPE_SECRET_KEY)) {
       console.log("REFUSING TO SERVE: STRIPE_SECRET_KEY is missing or is not a Stripe test key (rk_test_/sk_test_).");
@@ -650,5 +691,5 @@ export default {
     }
 
     return respond("Not found.", "text/plain; charset=utf-8", 404);
-  },
-};
+  }
+}

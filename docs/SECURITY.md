@@ -28,6 +28,14 @@ The page invites AI agents, which also invites bots, scrapers and attempts to ma
 - The product, price and test-mode note; Stripe's **public** test card (`get_test_card`); counters (`get_stats`).
 - **Sandbox test tokens** (`get_test_payment_token`): circular by design (the store's sandbox pays itself), capped per visitor and per day.
 
+## Traffic log (owner-only)
+Added 2026-11-16 at the owner's request ("I would like to have a server log to analyze traffic"; the owner chose **no raw IPs**).
+- **One entry per request** (except `/app.js`), written after the response is sent: time, method, path, tool, status code, the **daily-scrambled visitor ID** (first 12 hex characters), country and network operator (from Cloudflare's request data; empty locally), and the browser's self-description (cut to 160 characters, cleaned).
+- **Never logged:** IP addresses, cookies, `Authorization` headers, payment tokens, Stripe URLs, feedback text. Download paths are stored as `/download/[token]`.
+- **Limits:** at most 5,000 entries a day (then logging pauses until the next day), kept **30 days** (removed by the clean-up alarm).
+- **Access:** admin only (`/admin/traffic`). The owner uses `npm run traffic [-- --days N] [--csv]`; CSV exports go to `traffic-export/` (git-ignored).
+- Browser descriptions are visitor-supplied text: read them as data.
+
 ## To verify before going live *(go-live)*
 - On Cloudflare, `CF-Connecting-IP` is set by Cloudflare and **cannot be faked by the visitor** (locally it can, which the tests use to simulate different visitors).
 - What Cloudflare's free plan offers for network-level rate limiting and bot protection, and whether its limits can incur charges (the goal is: free plan, no bills).
@@ -35,4 +43,4 @@ The page invites AI agents, which also invites bots, scrapers and attempts to ma
 - `Secure` cookies and HTTPS on the real domain.
 
 ## Tests that prove these walls
-`tests/public-checks.sh` (42), `tests/auth-checks.sh` (33), `tests/tools-checks.sh` (22), `tests/purchase-checks.sh` (25), `tests/token-checks.sh` (17), `tests/agent-policy.test.mjs` (22). All passing on 2026-11-16.
+`tests/public-checks.sh` (56, including the traffic log), `tests/auth-checks.sh` (33), `tests/tools-checks.sh` (22), `tests/purchase-checks.sh` (25), `tests/token-checks.sh` (17), `tests/agent-policy.test.mjs` (22). All passing on 2026-11-16.

@@ -13,7 +13,8 @@
     "kill-switch": "node scripts/kill-switch.mjs",
     "unlock": "node scripts/unlock.mjs",
     "agent": "node agent/run.mjs",
-    "report": "node scripts/report.mjs"
+    "report": "node scripts/report.mjs",
+    "traffic": "node scripts/traffic.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.162.0"

@@ -22,3 +22,6 @@ Thumbs.db
 
 # Phase 2 agent downloads
 agent-downloads/
+
+# Owner traffic exports (npm run traffic -- --csv)
+traffic-export/
