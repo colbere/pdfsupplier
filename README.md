@@ -54,7 +54,7 @@ npm run agent -- --show                    # watch the Chrome window
 It makes its own sign-in code, buys the PDF in Stripe test mode, and prints where the PDF was saved. The spending rule (at most $1.00, one purchase, this store and Stripe only, test mode only) is enforced in `agent/policy.mjs`. Each run writes a redacted record to `docs/test-runs/agent/`. It needs `ANTHROPIC_API_KEY` in `.env`.
 
 ### The test agent (Phase 1)
-The agent is Google's [Example Agentic Chrome Extension](https://github.com/GoogleChromeLabs/webmcp-extension) (commit `051a93c`), cloned **next to** this folder. It needs the local changes in [docs/extension-patch.diff](docs/extension-patch.diff) (apply with `git apply` inside the clone, then `npm install`, `npm run build`, `npm run server`). Its own `.env` holds `ANTHROPIC_API_KEY` (you paste it yourself) and `MODEL=anthropic:claude-opus-5-5`.
+The agent is Google's [Example Agentic Chrome Extension](https://github.com/GoogleChromeLabs/webmcp-extension) (commit `051a93c`), cloned **next to** this folder. It needs the local changes in [docs/extension-patch.diff](docs/extension-patch.diff) (apply with `git apply` inside the clone, then `npm install`, `npm run build`, `npm run server`). The extension is Google's code under the Apache License 2.0. The patch file names the upstream commit, the license and what was changed; this repo's own license doesn't cover it. Its own `.env` holds `ANTHROPIC_API_KEY` (you paste it yourself) and `MODEL=anthropic:claude-opus-5-5`.
 
 ### Tests
 With the site running: `bash tests/auth-checks.sh`, `bash tests/tools-checks.sh`, `bash tests/purchase-checks.sh` and `bash tests/token-checks.sh`. The agent's spending rule: `node --test tests/agent-policy.test.mjs`.

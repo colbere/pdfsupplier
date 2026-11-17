@@ -1,3 +1,16 @@
+Local patch to Google's "Example Agentic Chrome Extension"
+  Upstream:  https://github.com/GoogleChromeLabs/webmcp-extension
+  Applies to upstream commit 051a93c (check: `git apply --check extension-patch.diff` inside a clone at that commit).
+  Copyright 2026 Google LLC. Licensed under the Apache License, Version 2.0:
+  https://www.apache.org/licenses/LICENSE-2.0 (the upstream repo's LICENSE file). The upstream repo has no NOTICE file.
+
+Modified for The PDF Supplier experiment (2026-11-13). These are changes to Google's files: every
+change is marked "LOCAL PATCH" in the code. Why each change was made: docs/DECISIONS.md D20, D21, D23
+(and the late-tool-results note in server/server.ts). 7 files, +201/-15. The package-lock.json changes
+that `npm install` made are left out; run `npm install` after applying.
+
+Apply: inside a clone at 051a93c, run `git apply extension-patch.diff`, then `npm install`, `npm run build`, `npm run server`.
+
 diff --git a/extension/content.ts b/extension/content.ts
 index 5e230f3..bd528be 100644
 --- a/extension/content.ts
@@ -291,44 +304,6 @@ index 6369ab7..0f18c14 100644
 +    if (lastReport !== null && performance.now() - lastReport >= quietMs && !stillEmpty()) return;
    }
  }
-diff --git a/package-lock.json b/package-lock.json
-index d4f4f4a..1f684b5 100644
---- a/package-lock.json
-+++ b/package-lock.json
-@@ -672,6 +672,7 @@
-       "integrity": "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==",
-       "dev": true,
-       "license": "MIT",
-+      "peer": true,
-       "dependencies": {
-         "csstype": "^3.2.2"
-       }
-@@ -1214,7 +1215,8 @@
-       "resolved": "https://registry.npmjs.org/devtools-protocol/-/devtools-protocol-0.0.1704951.tgz",
-       "integrity": "sha512-GQhQOs9u/Mvm1zMtJIH872JS4AskuZdUSsPNPk4ChahtWAUqgz6atEtIsMt+nO7MqF1Ic4HxII/k8Cu36JivNg==",
-       "dev": true,
--      "license": "BSD-3-Clause"
-+      "license": "BSD-3-Clause",
-+      "peer": true
-     },
-     "node_modules/dom-serializer": {
-       "version": "3.1.1",
-@@ -1601,6 +1603,7 @@
-       "resolved": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
-       "integrity": "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw==",
-       "license": "MIT",
-+      "peer": true,
-       "engines": {
-         "node": ">=0.10.0"
-       }
-@@ -1842,6 +1845,7 @@
-       "resolved": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
-       "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
-       "license": "MIT",
-+      "peer": true,
-       "funding": {
-         "url": "https://github.com/sponsors/colinhacks"
-       }
 diff --git a/server/server.ts b/server/server.ts
 index aebd15c..91e5eb4 100644
 --- a/server/server.ts
