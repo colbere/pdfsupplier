@@ -304,6 +304,12 @@ Each design decision, the alternatives considered, and the reason. Newest at the
 
 ## D33: License: MIT, copyright "colbere" (2026-11-17, review A1)
 **Decision (owner):** the repo is MIT-licensed (`LICENSE`), copyright line "Copyright (c) 2026 colbere" (the GitHub username, so the real name isn't added to another file). `package.json` says `"license": "MIT"`.
-**Exception:** `docs/extension-patch.diff` changes Google's Apache-2.0 extension and stays under Apache-2.0 (its header says so; D32-era review item A5).
+**Exception:** `docs/extension-patch.diff` changes Google's Apache-2.0 extension and stays under Apache-2.0 (its header says so; review item A5).
 **Why:** the repo is public; with no license nobody could legally reuse it. MIT is the simplest permissive choice.
+
+## D34: Commit identity and history rewrite (2026-11-17, review A3)
+**Decision (owner):** commits show **"colbere"** and GitHub's no-reply address (`322911786+colbere@users.noreply.github.com`), and **all past commits were rewritten** the same way before the repo is posted anywhere.
+**What the rewrite did (all 62 commits):** author and committer set to the new name and address; timestamps kept to the same moment but shown in UTC (+0000), so the time zone isn't visible; and older versions of the docs had the owner's phone, network and time-zone details replaced (the same wording as review item A2), including one commit message. The final files were byte-for-byte unchanged. Commit IDs mentioned in the docs (14) were updated to the new IDs.
+**How:** a full mirror backup first (`c:\claude\pdfsupplier-backup-before-rewrite-2026-11-17.git`, local only), then `git filter-branch`, verification (no personal strings in any diff, message or author; same timestamps and messages; same final tree), and `git push --force-with-lease`.
+**Consequences:** old clones or forks have different history and need a fresh clone. GitHub may keep the old commits reachable by their old IDs for a while; removing them completely needs a GitHub Support request (not done). Future commits use the new identity via this repo's local git config, and are made with `TZ=UTC0` so their timestamps also show +0000 (git otherwise uses the computer's time zone).
 

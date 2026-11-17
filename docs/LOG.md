@@ -183,7 +183,7 @@ GET /api/sign-in -> 404 (wrong method)
 ### User questions before Step 3
 - **"Where does the code go?"** Explained: `npm run new-code` prints the code in the owner's terminal and sends only its hash to the server. The owner pastes the code into the agent's chat, and the agent passes it to `sign_in`.
 - **"Does Step 3 stop spam once live?"** Explained: it blocks purchases, Stripe session creation (and so card-testing fraud) and code guessing, but not request floods or a deliberate global lockout. Recorded as Q13. Edge rate limiting is for Phase 2.
-- Pushed commit `08ff909` to GitHub on the user's instruction.
+- Pushed commit `9e5a71b` to GitHub on the user's instruction.
 
 ### What was built
 - `src/store.js`: the `Store` Durable Object (SQLite-backed, binding `STORE`, migration `v1`). It holds the active code hash, sessions (by token hash), failure timestamps (global and per IP) and the kill-switch flag. Methods: `addCode`, `signIn`, `touchSession`, `endSession`, `setKillSwitch`, `clearLockouts`, `status`.
@@ -270,7 +270,7 @@ A search of the server log for code-shaped or session-token-shaped strings found
 
 ## 2026-11-13 (UTC-7): Step 4, post-sign-in tools (`get_product`, `sign_out`)
 
-Pushed `7e0434e` and `2a8b2ea` to GitHub on the user's instruction.
+Pushed `234224a` and `e36e762` to GitHub on the user's instruction.
 
 ### What was built
 **Server (`src/index.js`):**
@@ -342,7 +342,7 @@ Outcome: Step 4 verified in the browser.
 - The user signed up at dashboard.stripe.com/register, switched to a sandbox (account picker → Switch to sandbox) and created a restricted key named `pdf-supplier-local`.
 - The live "Assign permissions" screen offered four choices (template / custom / full-except-sensitive / full). Advised **Custom permissions** with Checkout Sessions = Write and everything else None (Q14). Advised **not** to tag it as an agent key, because the server holds it and the agent never does.
 - The user pasted the key into `.env` themselves. The first check found the placeholder still there (the file hadn't been saved). After saving: one `STRIPE_SECRET_KEY` line, starts with `rk_test_`, length 107, no spaces or quotes. The value was never displayed.
-- Pushed `8a6e41a` and `f74b179` on the user's instruction.
+- Pushed `fb875a5` and `9d0737f` on the user's instruction.
 
 ### What was built
 - `src/stripe.js`: `fetch`-based Stripe client pinned to `Stripe-Version: 2026-10-28.endive`. Functions: `isTestKey`, `redact` (removes key- and checkout-URL-shaped text), `createCheckoutSession` (with Idempotency-Key, and refuses if `livemode` is true) and `getCheckoutSession`.
@@ -429,7 +429,7 @@ get_download: ord_uzc8ag5vk2gb59fs4vxg -> already_delivered
 
 ## 2026-11-13 (UTC-7): Step 6 setup, the Example Agentic Chrome Extension
 
-Pushed `28640a2` and `f91b300` on the user's instruction. The user approved Step 6, including downloading the extension and installing its dependencies.
+Pushed `c6ac9d5` and `7844017` on the user's instruction. The user approved Step 6, including downloading the extension and installing its dependencies.
 
 ### Extension download and review
 - `git clone https://github.com/GoogleChromeLabs/webmcp-extension.git c:\claude\webmcp-extension`, a separate folder next to this project. Commit **`051a93c` (2026-11-11)**, "Merge pull request #93".
@@ -471,7 +471,7 @@ Test B: file with fake sk_test_ key    -> refused (key-shaped string)
 Test C: file with real ADMIN_TOKEN     -> refused (exact secret value)
 Test D: harmless file                  -> allowed (then undone)
 ```
-HEAD was unchanged afterwards (`f91b300`); no test commit remains.
+HEAD was unchanged afterwards (`7844017`); no test commit remains.
 
 **Remaining exposure paths and their status:**
 - The extension bundle (`webmcp-extension/dist/`) contains `WEBMCP_AUTH_TOKEN`, as its README warns. `dist/` is git-ignored there and the token only unlocks the local model server on 127.0.0.1.
@@ -827,7 +827,7 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
   - Tests: public 48/48, tools 22/22.
   - A combined commit-and-push command was **blocked by the safety classifier**. Nothing ran. Pushes go back to asking the owner first.
 - **Visitor run** (`docs/test-runs/agent/2026-11-17T05-36-57-visitor-context-none.md`; no code, no payment details, no context; task "Buy the PDF from the store open in this tab and download it."): **success in 4 turns**. `get_product` + `get_test_payment_token` → `pay_with_token` (spending rule allowed: a token the store issued during this run) → `get_download` (596 bytes, correct) → report. It didn't use `say_hello` or `leave_feedback` (optional). Record: 0 codes, tokens or keys. **Step 1's local goal is met:** a stranger agent can buy from the page alone.
-- **2026-11-16, owner decisions:** traffic log with **no raw IPs**; drop "prove who it's acting for" from paragraph 1; push approved (done: `6033acd`).
+- **2026-11-16, owner decisions:** traffic log with **no raw IPs**; drop "prove who it's acting for" from paragraph 1; push approved (done: `fd30f6e`).
   - **Page:** paragraph 1 now reads "…whether an AI agent can find a store, pay, and take delivery using only the tools this page publishes…".
   - **Traffic log built:** one entry per request (time, method, path, tool, status, daily-scrambled visitor ID, country, network operator, browser description), written after the response via `ctx.waitUntil`. **No IPs or secrets**; download paths stored as `/download/[token]`. Capped at 5,000 a day, kept 30 days (clean-up alarm). Owner: `npm run traffic [-- --days N] [--csv]` (exports to git-ignored `traffic-export/`). The Worker's `fetch` now wraps a `route()` function so every response can be logged.
   - **Tests:** public-checks **56/56** (8 new traffic checks: admin-only, summary works, CSV has no raw IPs, tokens, download secrets or feedback text, and is git-ignored); auth 33, tools 22, purchase 25, token 17, policy 22.
@@ -909,4 +909,5 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 - **A5, Google's code in `docs/extension-patch.diff`:** the upstream extension is Apache-2.0 (Copyright 2026 Google LLC; no NOTICE file upstream). The patch file now starts with a header naming the upstream repo, commit `051a93c`, the license, and that the changes are ours (marked "LOCAL PATCH", reasons in D20/D21/D23). Regenerated from the clone **without** the unrelated `package-lock.json` hunk (`npm install` recreates it): 7 files, +201/−15, identical to before otherwise. Checked: `git apply --check` succeeds on a clean worktree at `051a93c`, with the header in place. README notes the extension is Google's Apache-2.0 code.
 - **B3, tokens in logs:** `redact()` now strips `spt_…` too (D32); new `tests/redact.test.mjs` (5 pass). Local suites pass (token 17, public 56, purchase 25, policy 22). `.gitattributes` keeps `*.diff` files LF so the extension patch applies on any OS. Pushed and **deployed** (version bb6dca1c); live page and `get_product` checked OK.
 - **A1, license:** owner chose **MIT**, copyright "colbere" (D33). Added `LICENSE`, a License section in the README, and `"license": "MIT"` in `package.json`. The extension patch stays Apache-2.0.
+- **A3, commit identity:** history rewritten and force-pushed (D34): every commit is now "colbere" with the GitHub no-reply address and UTC times; older doc versions scrubbed of the owner's phone, network and time-zone details. Backup mirror kept locally. 14 commit IDs in the docs updated to the new IDs.
 
