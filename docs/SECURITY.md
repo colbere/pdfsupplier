@@ -45,5 +45,9 @@ Added 2026-11-16 at the owner's request ("I would like to have a server log to a
 - **Not run on live:** the 5-wrong-passwords cut-off. It would lock the owner's own connection out of the owner commands, including `unlock`, for an hour. It's covered by the local tests, and the live site runs the same code.
 - **Free plan:** Workers and Durable Objects stop with errors at the daily limits instead of billing (see `docs/research/GO-LIVE.md`).
 
+## Learned from outside agents (2026-11-17)
+- **Agents can skip WebMCP and call the API directly.** Meta Muse bought the PDF with `curl`, using the same calls the tools make. This is by design: the server is the gate, and every wall (session, single-use token, Stripe confirmation, single-use session-bound download, caps) applies to direct calls too.
+- **Per-visitor limits don't group agents that rotate addresses.** Muse's 8 requests came from 8 different addresses (Cloudflare-hosted egress), so the store counted 8 visitors. What still bounds such an agent: the store-wide hourly and daily caps, the per-session order cap (5), Stripe's single-use $1 token, and the Cloudflare rule (per address). Acceptable for a sandbox store. If it ever mattered, per-session limits would be the next wall.
+
 ## Tests that prove these walls
 `tests/public-checks.sh` (56, including the traffic log), `tests/auth-checks.sh` (33), `tests/tools-checks.sh` (22), `tests/purchase-checks.sh` (25), `tests/token-checks.sh` (17), `tests/agent-policy.test.mjs` (22): all passing locally on 2026-11-17 (the server-log checks need `PDFS_SERVER_LOG` set to the local server's output file). **Live:** `bash tests/live-checks.sh` (52), all passing on 2026-11-17.
