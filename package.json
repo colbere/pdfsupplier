@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "Experiment: can an AI agent buy a PDF using only WebMCP tools? Phase 1, local, Stripe test mode.",
+  "description": "Experiment: can an AI agent buy a PDF using only WebMCP tools? Live at pdfsupplier.com, Stripe sandbox only.",
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "predev": "node scripts/check-env.mjs",
