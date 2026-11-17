@@ -804,3 +804,19 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - **Web search on Meta Muse** (Wikipedia, ai.meta.com/muse, Meta help, Arcjet, Zapier, tjrobertson.com, anythingmcp.com): Muse runs in a Meta-hosted cloud VM with a full browser (seen by sites as Chrome on Linux). **One third-party source says Muse doesn't natively support WebMCP yet** (Meta AI does). Unconfirmed by Meta.
 - **Owner decisions:** any visiting agent may buy (with limits); visitors pay by **page-issued test token and/or test card**; owner sign-in stays, optional.
 - Plan drafted in plain terms: `docs/PLAN.md`, "Phase 3" (**awaiting confirmation**).
+
+---
+
+## 2026-11-16 (UTC-7): Phase 3 step 1, the public sandbox store, built and tested locally
+
+- **Owner's working agreement (D30):** no step-by-step approvals; make sure the security walls are right for agentic traffic.
+- **Built:** visitor sessions; the public tools `get_test_payment_token`, `get_test_card`, `say_hello`, `get_stats`, `leave_feedback`; public `get_product`; the limits table; admin brute-force cut-off; a clean-up alarm; `npm run report`; `unlock` also resets limits; agent `--route visitor`. Security reference: **`docs/SECURITY.md`**.
+- **Checks:**
+  - Chrome lists **12 tools**, all within the recommended name, description and parameter limits; `pay_with_token` is the only consequential one.
+  - Local `wrangler dev` accepts a client-sent `CF-Connecting-IP`, which the tests use to simulate different visitors. **On Cloudflare this must be confirmed unforgeable before go-live.**
+- **Tests:**
+  - New `tests/public-checks.sh`: first run 41/42. The failure was a test mistake: it looked for the page script's "ways to buy" text in the server response. Fixed: **42/42**.
+  - Earlier suites, adjusted for D29: auth 33, tools 22, purchase 25, token 17, policy 22. All pass.
+  - Proven: a visitor buys and downloads without sign-in; orders isolated; names and feedback never in stats or the server log; feedback limited **per visitor**; 11th wrong admin password in an hour → 429; the kill switch closes everything and ends visitor sessions.
+- **Bugs caught along the way:** shell quoting broke two of my ad-hoc check one-liners (replaced with a real in-Chrome tool listing).
+- **Waiting:** a visitor-route agent run (the owner's Anthropic credit) and the owner's approval of new page text.

@@ -93,6 +93,22 @@ export async function chargeSharedPaymentToken(env, { orderId, token }) {
   return { id: pi.id, status: pi.status, amount: pi.amount, currency: pi.currency, livemode: pi.livemode };
 }
 
+// SANDBOX ONLY: creates a test Shared Payment Token for a visiting agent with Stripe's test
+// helper (test card, limited to exactly the product price, short expiry). This is circular by
+// design (the store's sandbox pays itself) and exists only so visiting agents can try the
+// on-page payment flow (docs/DECISIONS.md D29). It can only work with a test key.
+export async function createTestSharedPaymentToken(env, { minutes = 15 } = {}) {
+  if (!isTestKey(env.STRIPE_SECRET_KEY)) throw new StripeError(500, "Test tokens need a Stripe test key.", "not_test");
+  const t = await stripeFetch(env, "POST", "/test_helpers/shared_payment/granted_tokens", {
+    payment_method: "pm_card_visa",
+    "usage_limits[currency]": PRODUCT.currency,
+    "usage_limits[max_amount]": String(PRODUCT.unitAmountCents),
+    "usage_limits[expires_at]": String(Math.floor(Date.now() / 1000) + minutes * 60),
+  }, null, SPT_VERSION);
+  if (t.livemode) throw new StripeError(500, "Stripe returned a LIVE token. Refusing.", "live_mode");
+  return { token: t.id, expiresAt: Date.now() + minutes * 60 * 1000 };
+}
+
 // Returns the fields we need from a PaymentIntent.
 export async function getPaymentIntent(env, id) {
   const pi = await stripeFetch(env, "GET", `/payment_intents/${encodeURIComponent(id)}`, null, null, SPT_VERSION);

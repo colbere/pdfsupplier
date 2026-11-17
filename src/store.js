@@ -13,7 +13,16 @@
 //                           status: "created" | "paid" | "delivered"
 //   "sessorders:<hash>"  -> [order ids] created by that app session
 //   "dl:<hash>"          -> { orderId, sessionHash, expiresAt }   single-use download tokens (hash only)
+//   "rl:<name>:<subject>:<bucket>" -> count   fixed-window rate-limit counters (subject = hashed client or "all")
+//   "stat:<name>"        -> count                       public counters (get_stats)
+//   "hello:<label>"      -> count                       self-reported agent names (owner-only view)
+//   "fb:<time>:<rand>"   -> { at, label, text }         private feedback (owner-only view), capped
 import { DurableObject } from "cloudflare:workers";
+
+export const FEEDBACK_MAX_STORED = 1000;          // total feedback entries kept
+const RL_KEEP_MS = 2 * 24 * 60 * 60 * 1000;       // rate-limit buckets kept 2 days
+const ORDER_KEEP_MS = 30 * 24 * 60 * 60 * 1000;   // orders kept 30 days
+const CLEANUP_EVERY_MS = 6 * 60 * 60 * 1000;      // cleanup alarm cadence
 
 export const MAX_ORDERS_PER_SESSION = 5;
 export const DOWNLOAD_TTL_MS = 5 * 60 * 1000; // download links expire after 5 minutes
@@ -58,10 +67,14 @@ export class Store extends DurableObject {
     return { ok: true, killSwitch: false };
   }
 
+  // Clears sign-in lockouts and all rate-limit counters (owner command: npm run unlock).
   async clearLockouts() {
     const s = this.ctx.storage;
-    const keys = [...(await s.list({ prefix: "fails:" })).keys()];
-    if (keys.length) await s.delete(keys);
+    const keys = [
+      ...(await s.list({ prefix: "fails:" })).keys(),
+      ...[...(await s.list({ prefix: "rl:" })).keys()].filter((k) => !k.startsWith("rl:visits-count:")),
+    ];
+    for (let i = 0; i < keys.length; i += 128) await s.delete(keys.slice(i, i + 128));
     return { ok: true, cleared: keys.length };
   }
 
@@ -110,11 +123,23 @@ export class Store extends DurableObject {
     }
 
     await s.delete("code"); // single use
-    await s.put(`session:${sessionHash}`, { createdAt: now, lastSeen: now });
+    await s.put(`session:${sessionHash}`, { kind: "owner", createdAt: now, lastSeen: now });
+    await this.#ensureCleanup();
     return { ok: true };
   }
 
-  // Checks a session and refreshes its inactivity timer. Returns true if valid.
+  // A visitor session for a public agent (no sign-in). Refused while the kill switch is on.
+  async createVisitorSession(sessionHash) {
+    const s = this.ctx.storage;
+    if (await s.get("killSwitch")) return { ok: false };
+    const now = Date.now();
+    await s.put(`session:${sessionHash}`, { kind: "visitor", createdAt: now, lastSeen: now });
+    await this.#ensureCleanup();
+    return { ok: true };
+  }
+
+  // Checks a session and refreshes its inactivity timer.
+  // Returns the session kind ("owner" | "visitor") if valid, otherwise false.
   async touchSession(sessionHash) {
     const s = this.ctx.storage;
     if (await s.get("killSwitch")) return false;
@@ -128,7 +153,121 @@ export class Store extends DurableObject {
     }
     rec.lastSeen = now;
     await s.put(key, rec);
+    return rec.kind || "owner";
+  }
+
+  async isKilled() {
+    return !!(await this.ctx.storage.get("killSwitch"));
+  }
+
+  // ---- Rate limits (fixed windows) ----
+
+  // Counts one event for `subject` under `name`; returns false (and doesn't count) if the
+  // window already holds `max` events. Use subject "all" for a global cap.
+  async hit(name, subject, max, windowMs) {
+    const s = this.ctx.storage;
+    const bucket = Math.floor(Date.now() / windowMs);
+    const key = `rl:${name}:${subject}:${bucket}`;
+    const n = (await s.get(key)) || 0;
+    if (n >= max) return false;
+    await s.put(key, n + 1);
     return true;
+  }
+
+  // Current count in this window (without counting).
+  async count(name, subject, windowMs) {
+    return (await this.ctx.storage.get(`rl:${name}:${subject}:${Math.floor(Date.now() / windowMs)}`)) || 0;
+  }
+
+  // Checks several limits; counts against all of them only if all allow it.
+  async hitAll(limits) {
+    const s = this.ctx.storage;
+    const now = Date.now();
+    const keys = limits.map(({ name, subject, windowMs }) => `rl:${name}:${subject}:${Math.floor(now / windowMs)}`);
+    const counts = await s.get(keys);
+    for (let i = 0; i < limits.length; i++) {
+      if ((counts.get(keys[i]) || 0) >= limits[i].max) return { ok: false, limit: limits[i].name, scope: limits[i].subject === "all" ? "global" : "visitor" };
+    }
+    const updates = {};
+    keys.forEach((k) => { updates[k] = (counts.get(k) || 0) + 1; });
+    await s.put(updates);
+    await this.#ensureCleanup();
+    return { ok: true };
+  }
+
+  // ---- Public counters, hellos and feedback ----
+
+  async bump(name, n = 1) {
+    const s = this.ctx.storage;
+    await s.put(`stat:${name}`, ((await s.get(`stat:${name}`)) || 0) + n);
+  }
+
+  async publicStats() {
+    const s = this.ctx.storage;
+    const out = {};
+    for (const [k, v] of await s.list({ prefix: "stat:" })) out[k.slice(5)] = v;
+    out.distinct_agent_names = (await s.list({ prefix: "hello:" })).size;
+    return out;
+  }
+
+  async recordHello(label) {
+    const s = this.ctx.storage;
+    const key = `hello:${label}`;
+    const n = ((await s.get(key)) || 0) + 1;
+    await s.put(key, n);
+    await this.bump("hellos");
+    return n;
+  }
+
+  async addFeedback({ label, text }) {
+    const s = this.ctx.storage;
+    const count = (await s.get("stat:feedback")) || 0;
+    const stored = (await s.list({ prefix: "fb:" })).size;
+    if (stored >= FEEDBACK_MAX_STORED) return { ok: false, reason: "full" };
+    const key = `fb:${String(Date.now()).padStart(15, "0")}:${crypto.randomUUID().slice(0, 8)}`;
+    await s.put({ [key]: { at: new Date().toISOString(), label, text }, "stat:feedback": count + 1 });
+    return { ok: true };
+  }
+
+  // ---- Owner-only views (admin API) ----
+
+  async ownerReport({ feedbackLimit = 50 } = {}) {
+    const s = this.ctx.storage;
+    const hellos = {};
+    for (const [k, v] of await s.list({ prefix: "hello:" })) hellos[k.slice(6)] = v;
+    const fb = [...(await s.list({ prefix: "fb:", reverse: true, limit: feedbackLimit })).values()];
+    return { stats: await this.publicStats(), hellos, feedback: fb };
+  }
+
+  // ---- Cleanup (alarm) ----
+
+  async #ensureCleanup() {
+    if ((await this.ctx.storage.getAlarm()) == null) {
+      await this.ctx.storage.setAlarm(Date.now() + CLEANUP_EVERY_MS);
+    }
+  }
+
+  async alarm() {
+    const s = this.ctx.storage;
+    const now = Date.now();
+    const doomed = [];
+    for (const [k] of await s.list({ prefix: "rl:" })) {
+      const parts = k.split(":"); // rl:<name>:<subject>:<bucket>; windows are 1 h or 1 day
+      const bucket = Number(parts[parts.length - 1]);
+      const windowMs = parts[1].endsWith("-h") ? 3600_000 : 86_400_000;
+      if (!Number.isFinite(bucket) || (bucket + 1) * windowMs < now - RL_KEEP_MS) doomed.push(k);
+    }
+    for (const [k, v] of await s.list({ prefix: "session:" })) if (now - v.lastSeen > SESSION_IDLE_MS) doomed.push(k);
+    for (const [k, v] of await s.list({ prefix: "dl:" })) if (v.expiresAt <= now) doomed.push(k);
+    for (const [k, v] of await s.list({ prefix: "order:" })) if (now - v.createdAt > ORDER_KEEP_MS) doomed.push(k);
+    for (const [k, v] of await s.list({ prefix: "sessorders:" })) {
+      const anyLive = await s.get(v.map((id) => `order:${id}`));
+      if (![...anyLive.values()].some(Boolean)) doomed.push(k);
+    }
+    const code = await s.get("code");
+    if (code && code.expiresAt <= now) doomed.push("code");
+    for (let i = 0; i < doomed.length; i += 128) await s.delete(doomed.slice(i, i + 128));
+    await s.setAlarm(now + CLEANUP_EVERY_MS);
   }
 
   async endSession(sessionHash) {
@@ -192,11 +331,14 @@ export class Store extends DurableObject {
     const o = await s.get(`order:${orderId}`);
     if (!o) return;
     o.paymentIntentId = paymentIntentId;
+    const updates = {};
     if (paid && o.status === "created") {
       o.status = "paid";
       o.paidAt = Date.now();
+      updates["stat:test_purchases"] = ((await s.get("stat:test_purchases")) || 0) + 1;
     }
-    await s.put(`order:${orderId}`, o);
+    updates[`order:${orderId}`] = o;
+    await s.put(updates);
   }
 
   // Returns the order only if it belongs to this session.
@@ -205,14 +347,17 @@ export class Store extends DurableObject {
     return o && o.sessionHash === sessionHash ? o : null;
   }
 
+  // Returns true only when this call moved the order to "paid" (so it is counted once).
   async markPaid(orderId) {
     const s = this.ctx.storage;
     const o = await s.get(`order:${orderId}`);
     if (o && o.status === "created") {
       o.status = "paid";
       o.paidAt = Date.now();
-      await s.put(`order:${orderId}`, o);
+      await s.put({ [`order:${orderId}`]: o, "stat:test_purchases": ((await s.get("stat:test_purchases")) || 0) + 1 });
+      return true;
     }
+    return false;
   }
 
   // Atomically: order must belong to session, be paid and not delivered -> mark delivered + store token.
@@ -241,6 +386,7 @@ export class Store extends DurableObject {
     if (d.sessionHash !== sessionHash) return { ok: false, reason: "wrong_session" }; // not deleted
     await s.delete(key);
     if (d.expiresAt <= Date.now()) return { ok: false, reason: "expired" };
+    await this.bump("downloads");
     return { ok: true, orderId: d.orderId };
   }
 

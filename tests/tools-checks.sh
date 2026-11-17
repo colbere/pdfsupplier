@@ -15,11 +15,12 @@ JAR=$(mktemp)
 
 npm run --silent kill-switch -- off >/dev/null; npm run --silent unlock >/dev/null
 
-echo "== 1. Purchase endpoints refuse requests without a valid session"
-expect "get_product, no cookie -> 401"     401 "$(post "$B/api/product")"
+echo "== 1. get_product is public (D29); order lookups still need a session"
+expect "get_product, no cookie -> 200 (public)" 200 "$(post "$B/api/product")"
+expect "check_order, no cookie -> 401"     401 "$(post -d '{"order_id":"ord_aaaaaaaaaaaaaaaaaaaa"}' "$B/api/order")"
 has    "  ...says not_authenticated" '"code":"not_authenticated"'
-expect "get_product, forged cookie -> 401" 401 "$(post -H 'Cookie: __Host-pdfs_session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' "$B/api/product")"
-expect "get_product, GET instead of POST -> 405" 405 "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/product")"
+expect "check_order, forged cookie -> 401" 401 "$(post -H 'Cookie: __Host-pdfs_session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' -d '{"order_id":"ord_aaaaaaaaaaaaaaaaaaaa"}' "$B/api/order")"
+expect "get_product, GET instead of POST -> 404 (not served)" 404 "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/product")"
 
 echo "== 2. Signed in: get_product works"
 CODE=$(newcode)
@@ -33,10 +34,10 @@ expect "get_product cross-origin -> 403" 403 "$(post -b "$JAR" -H 'Origin: https
 
 echo "== 3. sign_out ends the session"
 expect "sign_out cross-origin -> 403" 403 "$(post -b "$JAR" -H 'Origin: https://evil.example' "$B/api/sign-out")"
-expect "session still valid after refused cross-origin sign_out" 200 "$(post -b "$JAR" "$B/api/product")"
+expect "session still valid after refused cross-origin sign_out" 200 "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$B/api/session")"
 expect "sign_out -> 200" 200 "$(curl -s -o /tmp/pdfs_body -D /tmp/pdfs_hdr -w '%{http_code}' -b "$JAR" -X POST -H 'Content-Type: application/json' -d '{}' "$B/api/sign-out")"
 tr -d '\r' < /tmp/pdfs_hdr | grep -qi '^set-cookie: __Host-pdfs_session=; .*Max-Age=0' && ok "  ...cookie cleared (Max-Age=0)" || bad "  ...cookie not cleared"
-expect "old cookie after sign_out -> 401" 401 "$(post -b "$JAR" "$B/api/product")"
+expect "old cookie after sign_out -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$B/api/session")"
 expect "sign_out again (no session) -> 200, harmless" 200 "$(post "$B/api/sign-out")"
 
 echo "== 4. Kill switch also blocks tool endpoints"
@@ -45,7 +46,8 @@ CODE=$(newcode)
 curl -s -o /dev/null -c "$JAR" -X POST -H 'Content-Type: application/json' -d "{\"code\":\"$CODE\"}" "$B/api/sign-in"
 expect "get_product before kill -> 200" 200 "$(post -b "$JAR" "$B/api/product")"
 npm run --silent kill-switch -- on >/dev/null
-expect "get_product after kill -> 401" 401 "$(post -b "$JAR" "$B/api/product")"
+expect "get_product after kill -> 503 (store closed)" 503 "$(post -b "$JAR" "$B/api/product")"
+expect "owner session after kill -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$B/api/session")"
 npm run --silent kill-switch -- off >/dev/null
 
 echo "== 5. Page still clean"

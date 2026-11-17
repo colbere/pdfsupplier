@@ -75,7 +75,7 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 
 ---
 
-# Phase 3: public sandbox store (draft, waiting for my confirmation)
+# Phase 3: public sandbox store (confirmed 2026-11-16; working agreement in D30)
 
 **Goal:** the page is live on my domain, and outside agents (for example Meta Muse) can visit, buy the PDF in Stripe's sandbox and download it, with no help from me. Still sandbox-only and free except the domain (D27, D27a). Decisions: D29.
 
@@ -83,7 +83,7 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 - Some agents won't be able to use WebMCP at all, and then a text-only page gives them nothing to do. **Meta Muse's WebMCP support is unconfirmed**; we find out by trying.
 - Agents that pay on Stripe's page may still get stuck on Stripe's hidden iframe tools. The page-issued test token avoids that.
 
-## Step 1. New tools on my page (built and tested locally first)
+## Step 1. New tools on my page — ✅ built and tested locally (2026-11-16); waiting on: my agent's visitor run, and my approval of the page text
 - **Buying without signing in:** a visiting agent gets its own short-lived visitor session automatically. My one-time-code sign-in still works for my own runs.
 - **`get_test_payment_token`:** hands the visiting agent a $1 sandbox token to use with `pay_with_token`. The whole purchase stays on my page.
 - **`get_test_card`:** Stripe's public test card details, for agents that pay on Stripe's page.
@@ -94,7 +94,7 @@ This stays an experiment: **Stripe sandbox/test mode permanently, and no paid se
 - **Page text:** updated to say any agent can try (I approve the wording).
 - Tests for all of the above. My own agent runs as a "stranger" (no sign-in, no notes) to prove it works.
 
-## Step 2. Put it online (each sign-up or payment needs my go-ahead)
+## Step 2. Put it online (Claude proceeds; I do the sign-ups, the domain purchase and typing secrets)
 - **Cloudflare:** a free account; deploy the Worker and its storage; set the Stripe sandbox key and admin password as Cloudflare secrets (I enter them myself).
 - **Domain:** buy it (the one allowed cost) and point it at the Worker.
 - **Chrome's WebMCP origin trial:** register my domain so ordinary Chrome browsers expose my tools without the testing flag.

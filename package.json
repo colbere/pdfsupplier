@@ -12,7 +12,8 @@
     "new-code": "node scripts/new-code.mjs",
     "kill-switch": "node scripts/kill-switch.mjs",
     "unlock": "node scripts/unlock.mjs",
-    "agent": "node agent/run.mjs"
+    "agent": "node agent/run.mjs",
+    "report": "node scripts/report.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.162.0"

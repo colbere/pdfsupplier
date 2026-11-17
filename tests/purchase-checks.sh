@@ -20,7 +20,8 @@ npm run --silent kill-switch -- off >/dev/null
 signin "$JA"; signin "$JB"
 
 echo "== 1. Purchase endpoints need a session"
-for p in /api/checkout /api/open-checkout /api/order /api/download; do expect "$p without session -> 401" 401 "$(post "$NOJAR" $p)"; done
+# (create_checkout without a session now starts a visitor session (D29); see tests/public-checks.sh.)
+for p in /api/open-checkout /api/order /api/download; do expect "$p without session -> 401" 401 "$(post "$NOJAR" $p)"; done
 expect "GET /download/<random> without session -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' "$B/download/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")"
 
 echo "== 2. create_checkout (real Stripe test call)"

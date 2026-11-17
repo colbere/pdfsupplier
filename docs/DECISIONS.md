@@ -249,6 +249,23 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   - **Meta Muse's WebMCP support is unconfirmed** (one third-party source says not natively yet). It must be tested against the live site.
 - **Plan:** `docs/PLAN.md`, "Phase 3: public sandbox store" (awaiting the owner's confirmation).
 
+## D30. Working agreement for Phase 3, and the public store's design
+- **Date:** 2026-11-16. **Owner:** "I don't think I need to have every sign up or payment get my go ahead… I just want to make sure that the site has the right security walls in place since it's inviting agentic traffic."
+- **Working agreement:** Claude proceeds through `docs/PLAN.md` Phase 3 without step-by-step approval. It stops only for what needs the owner personally (sign-ups in their name, paying for the domain, typing secrets into Cloudflare) or anything outside the agreement (money beyond the domain, live keys, contacting third parties).
+- **Built (step 1):**
+  - **Visitor sessions** are created only by endpoints that *start* a purchase (`get_test_payment_token`, `pay_with_token`, `create_checkout`), within limits. Lookups (`check_order`, `open_checkout`, `get_download`) still require a session. Owner sessions come from `sign_in` (`kind: owner`), and `sign_out` appears only for the owner.
+  - **New public tools:**
+    - `get_test_payment_token`: a sandbox SPT capped at the product price, 15 min.
+    - `get_test_card`.
+    - `say_hello`: name ≤ 60 and model ≤ 80 characters, sanitised; names private.
+    - `get_stats`: numbers only.
+    - `leave_feedback`: 3–500 characters; private; capped.
+  - `get_product` is public and lists both ways to buy. 12 tools, all within WebMCP's recommended limits (checked in Chrome).
+  - **Walls:** see `docs/SECURITY.md` (limits table, privacy, admin brute-force cut-off, clean-up alarm, kill switch closes everything).
+  - **Owner tools:** `npm run report` (counters, hello names, latest feedback). `npm run unlock` now also resets rate-limit counters.
+  - **Agent:** `--route visitor` (no code, no payment details; it may pay only with a token the store issued to it during the run).
+- **Tests:** public-checks **42/42** (new); auth 33, tools 22, purchase 25, token 17, policy 22, all passing. Several earlier assertions were changed deliberately because D29 made `get_product` public and lets purchase-starting endpoints create visitor sessions.
+
 ## D17. Pre-commit secret guard; pushing disabled on the extension clone
 - **Date:** 2026-11-13 (Step 6, at the user's request: "ensure no sensitive data is being shared or exposed, and can't be exposed in the future")
 - **Decision:**

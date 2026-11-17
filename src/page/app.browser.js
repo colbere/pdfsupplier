@@ -1,15 +1,14 @@
 // Runs in the visitor's browser. Registers WebMCP tools if the browser supports them.
 // Browsers without WebMCP ignore all of this; the page is plain text either way.
 //
-// Security lives on the SERVER: every purchase tool calls an endpoint that checks the
-// session cookie. Registering or hiding tools here is only about what the agent sees.
+// Security lives on the SERVER: every tool calls an endpoint that applies the session checks,
+// ownership checks and abuse limits. Registering tools here is only about what agents see.
+// Any visiting agent may try a purchase (Stripe test mode only). See docs/SECURITY.md.
 (() => {
   "use strict";
 
   const mc = document.modelContext;
   if (!mc || typeof mc.registerTool !== "function") return; // No WebMCP: do nothing.
-
-  const IDLE_MS = 30 * 60 * 1000; // matches the server's session inactivity limit
 
   // ---------- Server calls ----------
 
@@ -22,12 +21,11 @@
     });
     let data = null;
     try { data = await res.json(); } catch { /* non-JSON reply */ }
-    if (data && data.code === "not_authenticated") removePurchaseTools("server says not authenticated");
-    else if (res.ok && purchaseCtl) resetIdleTimer();
     return { status: res.status, data };
   }
 
   const UNREACHABLE = "Could not reach the store's server. Try again shortly.";
+  const errorText = (data, fallback) => (data && data.error) || fallback;
 
   // Fetches the PDF (same-origin, with the session cookie) and hands it to the browser as a download.
   // The temporary <a> is never attached to the page, and its href is a local blob: URL, not the link.
@@ -52,36 +50,28 @@
     }
   }
 
-  // ---------- Purchase tools (only while signed in) ----------
+  const NO_INPUT = { type: "object", properties: {} };
+  const ORDER_INPUT = {
+    type: "object",
+    properties: { order_id: { type: "string", description: "The order_id from pay_with_token or create_checkout (starts with ord_)." } },
+    required: ["order_id"],
+  };
+  const hints = (readOnly, consequential = false) => ({ readOnlyHint: readOnly, consequentialHint: consequential, untrustedContentHint: false });
 
-  let purchaseCtl = null; // AbortController for every post-sign-in tool
-  let idleTimer = null;
+  // ---------- Public tools (any visiting agent) ----------
 
-  function resetIdleTimer() {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => removePurchaseTools("session idle for 30 minutes"), IDLE_MS);
-  }
-
-  function removePurchaseTools(reason) {
-    if (!purchaseCtl) return;
-    purchaseCtl.abort(); // unregisters every tool registered with this signal
-    purchaseCtl = null;
-    clearTimeout(idleTimer);
-    console.info(`WebMCP: purchase tools removed (${reason}).`);
-  }
-
-  const purchaseTools = [
+  const publicTools = [
     {
       name: "get_product",
       description:
-        "Returns the store's only product: its name, price and what it contains. " +
-        "Requires being signed in.",
-      inputSchema: { type: "object", properties: {} },
-      annotations: { readOnlyHint: true, consequentialHint: false, untrustedContentHint: false },
+        "Returns the store's only product (a PDF for $1.00 USD), what it contains, and the ways to buy it. " +
+        "Any agent may try buying; payments run in Stripe test mode, so no real money moves.",
+      inputSchema: NO_INPUT,
+      annotations: hints(true),
       async execute() {
         try {
           const { data } = await callServer("/api/product");
-          if (!data || !data.ok) return (data && data.error) || "Could not get the product.";
+          if (!data || !data.ok) return errorText(data, "Could not get the product.");
           const p = data.product;
           return [
             `Product: ${p.name}`,
@@ -89,10 +79,29 @@
             `What it is: ${p.description}`,
             `Delivery: ${p.delivery}`,
             p.note,
-            "Two ways to buy it: (1) if you have a Stripe Shared Payment Token for this store (starts with spt_, " +
-              "limited to at least $1.00 USD), call pay_with_token, then get_download; or (2) create_checkout, then " +
-              "open_checkout to pay on Stripe's page, then check_order and get_download.",
+            "Ways to buy:",
+            "A) On this page: get_test_payment_token, then pay_with_token, then get_download. (If you already have your own Shared Payment Token for this store, use it with pay_with_token.)",
+            "B) On Stripe's checkout page: get_test_card, then create_checkout, then open_checkout (pay with Stripe's tools), then check_order, then get_download.",
+            "Optional: say_hello to introduce yourself, leave_feedback to tell the owner what was confusing, get_stats to see how the experiment is going.",
           ].join("\n");
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "get_test_payment_token",
+      description:
+        "Gives you a sandbox Stripe Shared Payment Token (starts with spt_) for this store, limited to $1.00 USD and " +
+        "valid for 15 minutes, so you can buy the PDF with pay_with_token without leaving this page. " +
+        "Stripe test mode only: no real money. Limited per visitor per day.",
+      inputSchema: NO_INPUT,
+      annotations: hints(false),
+      async execute() {
+        try {
+          const { data } = await callServer("/api/test-token");
+          if (!data || !data.ok) return errorText(data, "Could not get a test payment token.");
+          return `Your sandbox payment token: ${data.payment_token} (limit ${data.limit}, expires ${data.expires_at}). Next: call pay_with_token with it, then get_download.`;
         } catch {
           return UNREACHABLE;
         }
@@ -101,23 +110,39 @@
     {
       name: "pay_with_token",
       description:
-        "Buys the PDF ($1.00 USD, Stripe test mode) with a Stripe Shared Payment Token: a single-use payment " +
-        "credential starting with spt_, created for this store and limited to at least $1.00 USD. Creates an " +
-        "order, charges the token once and returns the order_id. Then call get_download. Requires being signed in.",
+        "Buys the PDF ($1.00 USD, Stripe test mode) with a Stripe Shared Payment Token (starts with spt_) limited to at " +
+        "least $1.00 USD, such as one from get_test_payment_token. Creates an order, charges the token once and returns " +
+        "the order_id. Then call get_download.",
       inputSchema: {
         type: "object",
-        properties: {
-          payment_token: { type: "string", description: "The Shared Payment Token to charge (starts with spt_)." },
-        },
+        properties: { payment_token: { type: "string", description: "The Shared Payment Token to charge (starts with spt_)." } },
         required: ["payment_token"],
       },
-      annotations: { readOnlyHint: false, consequentialHint: true, untrustedContentHint: false },
+      annotations: hints(false, true),
       async execute({ payment_token } = {}) {
         try {
           const { data } = await callServer("/api/pay-with-token", { body: { payment_token } });
           if (!data) return "Could not complete the payment.";
-          if (!data.ok) return (data.order_id ? `Order ${data.order_id}: ` : "") + (data.error || "The payment failed.");
+          if (!data.ok) return (data.order_id ? `Order ${data.order_id}: ` : "") + errorText(data, "The payment failed.");
           return `Order ${data.order_id} is paid (${data.amount}, charged to the shared payment token). Call get_download with this order_id to get the PDF.`;
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "get_test_card",
+      description:
+        "Returns Stripe's public test card details, for paying on Stripe's checkout page (see create_checkout and " +
+        "open_checkout). It only works in Stripe test mode; no real money moves.",
+      inputSchema: NO_INPUT,
+      annotations: hints(true),
+      async execute() {
+        try {
+          const { data } = await callServer("/api/test-card");
+          if (!data || !data.ok) return errorText(data, "Could not get the test card.");
+          const c = data.card;
+          return `Test card number ${c.number}; expiry ${c.expiry}; CVC ${c.cvc}; ${c.other_fields}. ${data.note}`;
         } catch {
           return UNREACHABLE;
         }
@@ -126,15 +151,15 @@
     {
       name: "create_checkout",
       description:
-        "Starts a purchase of the PDF ($1.00 USD, Stripe test mode). Creates a Stripe Checkout page and " +
-        "returns its URL and an order_id. This does not charge anything: payment happens on the Stripe " +
-        "page, which has its own tools. If an unpaid order already exists, it is returned again. Requires being signed in.",
-      inputSchema: { type: "object", properties: {} },
-      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+        "Starts a purchase of the PDF ($1.00 USD, Stripe test mode) on Stripe's checkout page. Returns the Stripe page's " +
+        "URL and an order_id; nothing is charged yet. Payment happens on Stripe's page, which has its own tools " +
+        "(see get_test_card). If an unpaid order already exists, it is returned again.",
+      inputSchema: NO_INPUT,
+      annotations: hints(false),
       async execute() {
         try {
           const { data } = await callServer("/api/checkout");
-          if (!data || !data.ok) return (data && data.error) || "Could not create a checkout.";
+          if (!data || !data.ok) return errorText(data, "Could not create a checkout.");
           return [
             data.reused ? "An unpaid order already exists; here it is again." : "Order created.",
             `order_id: ${data.order_id}`,
@@ -154,17 +179,11 @@
     {
       name: "open_checkout",
       description:
-        "Takes this browser tab to the Stripe checkout page for an unpaid order, so you can pay there " +
-        "using the Stripe page's own tools. Takes the order_id from create_checkout. The tab leaves the store, " +
-        "so the store's tools are unavailable until Stripe returns the tab here after payment. Requires being signed in.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          order_id: { type: "string", description: "The order_id returned by create_checkout (starts with ord_)." },
-        },
-        required: ["order_id"],
-      },
-      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+        "Takes this browser tab to the Stripe checkout page for an unpaid order from create_checkout, so you can pay " +
+        "there with the Stripe page's own tools. The tab leaves the store, so the store's tools are unavailable until " +
+        "Stripe returns the tab here after payment.",
+      inputSchema: ORDER_INPUT,
+      annotations: hints(false),
       async execute({ order_id } = {}) {
         let data;
         try {
@@ -172,12 +191,11 @@
         } catch {
           return UNREACHABLE;
         }
-        if (!data || !data.ok) return (data && data.error) || "Could not open the checkout page.";
+        if (!data || !data.ok) return errorText(data, "Could not open the checkout page.");
         const url = String(data.checkout_url || "");
         if (!url.startsWith("https://checkout.stripe.com/")) return "The store returned an invalid checkout address.";
-        // Navigate this tab by script (the URL is never written into the page). The WebMCP
-        // extension treats a tool that navigates as "carry on with the new page's tools".
-        // This promise intentionally never resolves: the document is about to unload.
+        // Navigate this tab by script (the URL is never written into the page). This promise
+        // intentionally never resolves: the document is about to unload.
         window.location.assign(url);
         return new Promise(() => {});
       },
@@ -185,26 +203,20 @@
     {
       name: "check_order",
       description:
-        "Checks with Stripe whether an order has been paid. Takes the order_id from create_checkout. " +
-        "Returns paid, unpaid, expired or delivered. Requires being signed in.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          order_id: { type: "string", description: "The order_id returned by create_checkout (starts with ord_)." },
-        },
-        required: ["order_id"],
-      },
-      annotations: { readOnlyHint: true, consequentialHint: false, untrustedContentHint: false },
+        "Checks with Stripe whether an order has been paid. Takes the order_id from pay_with_token or create_checkout. " +
+        "Returns paid, unpaid, expired or delivered.",
+      inputSchema: ORDER_INPUT,
+      annotations: hints(true),
       async execute({ order_id } = {}) {
         try {
           const { data } = await callServer("/api/order", { body: { order_id } });
-          if (!data || !data.ok) return (data && data.error) || "Could not check the order.";
+          if (!data || !data.ok) return errorText(data, "Could not check the order.");
           const id = data.order_id;
           switch (data.status) {
             case "paid": return `Order ${id} is paid. Call get_download with this order_id to get the PDF.`;
             case "delivered": return `Order ${id} is paid and has already been delivered. Download links are single-use.`;
             case "expired": return `Order ${id} was not paid and its checkout page has expired. Call create_checkout to start again.`;
-            default: return `Order ${id} is not paid yet (Stripe checkout status: ${data.checkout_status}). Complete payment on the Stripe checkout page, then call check_order again.`;
+            default: return `Order ${id} is not paid yet (Stripe status: ${data.checkout_status || data.payment_status}). Complete payment, then call check_order again.`;
           }
         } catch {
           return UNREACHABLE;
@@ -214,23 +226,14 @@
     {
       name: "get_download",
       description:
-        "Delivers the PDF of a paid order: gets a single-use download link and immediately saves the file " +
-        "to this browser's Downloads folder. Takes the order_id. Marks the order delivered, so it works " +
-        "once per order. Call check_order first. Requires being signed in.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          order_id: { type: "string", description: "The order_id of a paid order (starts with ord_)." },
-        },
-        required: ["order_id"],
-      },
-      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+        "Delivers the PDF of a paid order: gets a single-use download link and immediately saves the file to this " +
+        "browser's Downloads folder. Takes the order_id. Works once per order, from the same browser that paid.",
+      inputSchema: ORDER_INPUT,
+      annotations: hints(false),
       async execute({ order_id } = {}) {
         try {
           const { data } = await callServer("/api/download", { body: { order_id } });
-          if (!data || !data.ok) return (data && data.error) || "Could not get the download link.";
-
-          // Use the single-use link right away to save the file (no navigation, nothing added to the page).
+          if (!data || !data.ok) return errorText(data, "Could not get the download link.");
           const saved = await savePdf(data.download_url);
           if (saved.ok) {
             return [
@@ -239,10 +242,9 @@
               "The single-use download link has now been used.",
             ].join("\n");
           }
-          // Automatic save failed: hand back the (still unused) link instead.
           return [
             `Order ${data.order_id} is delivered, but the automatic download failed (${saved.error}).`,
-            `Single-use download link (expires ${data.expires_at}, needs this signed-in browser): ${data.download_url}`,
+            `Single-use download link (expires ${data.expires_at}, works only in this browser): ${data.download_url}`,
           ].join("\n");
         } catch {
           return UNREACHABLE;
@@ -250,88 +252,149 @@
       },
     },
     {
-      name: "sign_out",
+      name: "say_hello",
       description:
-        "Signs out of the store and ends the session. The purchase tools are removed " +
-        "until someone signs in again with a new one-time code.",
-      inputSchema: { type: "object", properties: {} },
-      annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
-      async execute() {
-        let note = "";
+        "Optional: tell the store which agent and model you are. It is counted in the public statistics " +
+        "(get_stats shows only numbers; names stay private with the store owner).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string", description: "Your agent's name (up to 60 characters)." },
+          model: { type: "string", description: "The model you run on, if you know it (up to 80 characters)." },
+        },
+        required: ["agent_name"],
+      },
+      annotations: hints(false),
+      async execute({ agent_name, model } = {}) {
         try {
-          await callServer("/api/sign-out");
+          const { data } = await callServer("/api/hello", { body: { agent_name, model } });
+          return data && data.ok ? data.message : errorText(data, "Could not record the hello.");
         } catch {
-          note = " (The server could not be reached, but the tools were removed here.)";
+          return UNREACHABLE;
         }
-        removePurchaseTools("signed out");
-        return "Signed out. The purchase tools have been removed. Signing in again needs a new one-time code." + note;
+      },
+    },
+    {
+      name: "get_stats",
+      description:
+        "Returns public counters for this experiment: page visits, tool calls, test tokens issued, completed test " +
+        "purchases, PDFs downloaded, hellos and feedback received. Numbers only.",
+      inputSchema: NO_INPUT,
+      annotations: hints(true),
+      async execute() {
+        try {
+          const { data } = await callServer("/api/stats");
+          if (!data || !data.ok) return errorText(data, "Could not get the statistics.");
+          const s = data.stats;
+          const calls = Object.entries(s.tool_calls || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "none yet";
+          return [
+            `Page visits: ${s.page_visits}. Visitor sessions: ${s.visitor_sessions}.`,
+            `Test tokens issued: ${s.test_tokens_issued}. Completed test purchases: ${s.test_purchases_completed}. PDFs downloaded: ${s.pdfs_downloaded}.`,
+            `Hellos: ${s.hellos} (${s.distinct_agent_names} distinct names). Feedback received: ${s.feedback_received}.`,
+            `Tool calls: ${calls}.`,
+            data.note,
+          ].join("\n");
+        } catch {
+          return UNREACHABLE;
+        }
+      },
+    },
+    {
+      name: "leave_feedback",
+      description:
+        "Tell the store owner what was confusing or what failed while using this store (3 to 500 characters). " +
+        "Stored privately for the owner and never shown to other agents. Please don't include personal information.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          feedback: { type: "string", description: "What happened, what was confusing, or what failed (up to 500 characters)." },
+          agent_name: { type: "string", description: "Optional: your agent's name (up to 60 characters)." },
+        },
+        required: ["feedback"],
+      },
+      annotations: hints(false),
+      async execute({ feedback, agent_name } = {}) {
+        try {
+          const { data } = await callServer("/api/feedback", { body: { feedback, agent_name } });
+          return data && data.ok ? data.message : errorText(data, "Could not record the feedback.");
+        } catch {
+          return UNREACHABLE;
+        }
       },
     },
   ];
 
-  // Registers all purchase tools, or none (rolls back on any failure).
-  // Returns the list of tool names that are now available.
-  async function addPurchaseTools() {
-    if (purchaseCtl) return purchaseTools.map((t) => t.name); // already registered
+  // ---------- Owner tools ----------
+
+  let ownerCtl = null;
+
+  const signOutTool = {
+    name: "sign_out",
+    description: "For the store owner: ends the owner's session in this browser.",
+    inputSchema: NO_INPUT,
+    annotations: hints(false),
+    async execute() {
+      let note = "";
+      try {
+        await callServer("/api/sign-out");
+      } catch {
+        note = " (The server could not be reached.)";
+      }
+      if (ownerCtl) { ownerCtl.abort(); ownerCtl = null; }
+      return "Signed out." + note;
+    },
+  };
+
+  async function addOwnerTools() {
+    if (ownerCtl) return;
     const ctl = new AbortController();
     try {
-      for (const tool of purchaseTools) {
-        await mc.registerTool(tool, { signal: ctl.signal });
-      }
+      await mc.registerTool(signOutTool, { signal: ctl.signal });
+      ownerCtl = ctl;
     } catch (err) {
       ctl.abort();
-      console.warn("WebMCP: could not register purchase tools:", err && err.message);
-      return [];
+      console.warn("WebMCP: could not register owner tools:", err && err.message);
     }
-    purchaseCtl = ctl;
-    resetIdleTimer();
-    return purchaseTools.map((t) => t.name);
   }
-
-  // ---------- sign_in (always available) ----------
 
   const signInTool = {
     name: "sign_in",
     description:
-      "Signs in as the store owner's agent using a one-time code. The owner gives you the code; " +
-      "ask them for it if you don't have it. Codes work once and expire after 10 minutes. " +
-      "After a successful sign-in, more store tools become available.",
+      "For the store owner only: signs in with a one-time code from the owner. Not needed to buy; " +
+      "any agent can purchase without signing in.",
     inputSchema: {
       type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description: "The one-time sign-in code from the store owner, exactly as given.",
-        },
-      },
+      properties: { code: { type: "string", description: "The one-time sign-in code from the store owner, exactly as given." } },
       required: ["code"],
     },
-    annotations: { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false },
+    annotations: hints(false),
     async execute({ code } = {}) {
-      if (typeof code !== "string" || code.trim() === "") {
-        return "A sign-in code is required. Ask the store owner for their one-time code.";
-      }
+      if (typeof code !== "string" || code.trim() === "") return "A sign-in code is required. Only the store owner has one; buying doesn't need it.";
       let data;
       try {
         ({ data } = await callServer("/api/sign-in", { body: { code: code.trim() } }));
       } catch {
         return UNREACHABLE;
       }
-      if (!data || !data.ok) return (data && data.error) || "Sign-in failed.";
-      const names = await addPurchaseTools();
-      return names.length
-        ? `Signed in. These tools are now available: ${names.join(", ")}.`
-        : "Signed in, but the page could not add the store's tools. Reload the page and try again.";
+      if (!data || !data.ok) return errorText(data, "Sign-in failed.");
+      await addOwnerTools();
+      return "Signed in as the store owner. All store tools are available, plus sign_out.";
     },
   };
 
-  mc.registerTool(signInTool).catch((err) => {
-    console.warn("WebMCP: could not register sign_in:", err && err.message);
-  });
+  // ---------- Registration ----------
 
-  // ---------- On page load: restore tools if already signed in ----------
-
-  callServer("/api/session", { method: "GET" })
-    .then(({ data }) => { if (data && data.signedIn) return addPurchaseTools(); })
-    .catch(() => { /* server unreachable: stay signed out */ });
+  (async () => {
+    for (const tool of [...publicTools, signInTool]) {
+      try {
+        await mc.registerTool(tool);
+      } catch (err) {
+        console.warn(`WebMCP: could not register ${tool.name}:`, err && err.message);
+      }
+    }
+    try {
+      const { data } = await callServer("/api/session", { method: "GET" });
+      if (data && data.kind === "owner") await addOwnerTools();
+    } catch { /* stay as a visitor */ }
+  })();
 })();

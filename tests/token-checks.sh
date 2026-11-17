@@ -25,7 +25,8 @@ signin "$JA"; signin "$JB"
 T1=$(token); [ "${T1:0:4}" = "spt_" ] && ok "test wallet created a token (not shown)" || bad "test wallet failed"
 
 echo "== 1. Needs a session, a valid token and our own origin"
-expect "no session -> 401" 401 "$(post "$NOJAR" /api/pay-with-token "{\"payment_token\":\"$T1\"}")"
+# (Without a session, pay_with_token starts a visitor session (D29), so it isn't refused for that.)
+expect "no session + malformed token -> 400" 400 "$(post "$NOJAR" /api/pay-with-token '{"payment_token":"nope"}')"
 expect "malformed token -> 400" 400 "$(post "$JA" /api/pay-with-token '{"payment_token":"not-a-token"}')"
 expect "missing token -> 400" 400 "$(post "$JA" /api/pay-with-token '{}')"
 expect "cross-origin -> 403" 403 "$(post "$JA" /api/pay-with-token "{\"payment_token\":\"$T1\"}" -H 'Origin: https://evil.example')"

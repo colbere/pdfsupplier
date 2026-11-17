@@ -5,7 +5,7 @@ import APP_JS from "./page/app.browser.js";
 import { hashCode, sha256Hex, PRODUCT } from "./shared.js";
 import {
   isTestKey, redact, createCheckoutSession, getCheckoutSession, StripeError,
-  isSharedPaymentToken, chargeSharedPaymentToken, getPaymentIntent,
+  isSharedPaymentToken, chargeSharedPaymentToken, getPaymentIntent, createTestSharedPaymentToken,
 } from "./stripe.js";
 import { buildPdf } from "./pdf.js";
 export { Store } from "./store.js";
@@ -44,12 +44,65 @@ function json(obj, status = 200, extra = {}) {
 
 // Every sign-in failure returns exactly this (see docs/DECISIONS.md D6).
 const SIGN_IN_FAILED = { ok: false, error: "Sign-in failed." };
-// `code` lets the page recognise this and remove the purchase tools.
 const NOT_AUTHENTICATED = {
   ok: false,
   code: "not_authenticated",
-  error: "Not signed in, or the session has expired. Sign in again with a new one-time code from the store owner.",
+  error: "No active session (it may have expired after 30 minutes idle). Start a purchase again with get_test_payment_token or create_checkout.",
 };
+const CLOSED = { ok: false, code: "closed", error: "The store is temporarily closed. Try again later." };
+
+// ---- Abuse limits (docs/SECURITY.md) ----
+// Visitors are identified only by a SHA-256 of their IP address mixed with the current UTC day,
+// so raw IPs are never stored and the identifier changes daily.
+// Names ending in "-h" are hourly windows; the rest are daily.
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+const LIMITS = {
+  api:        { name: "api-h",            perVisitor: 300, global: 20000, windowMs: HOUR },
+  visitors:   { name: "visitor-sessions", perVisitor: 20,  global: 5000,  windowMs: DAY },
+  checkouts:  { name: "checkouts",        perVisitor: 5,   global: 300,   windowMs: DAY },
+  testTokens: { name: "test-tokens",      perVisitor: 5,   global: 300,   windowMs: DAY },
+  payments:   { name: "token-payments",   perVisitor: 10,  global: 500,   windowMs: DAY },
+  hellos:     { name: "hellos",           perVisitor: 20,  global: 3000,  windowMs: DAY },
+  feedback:   { name: "feedback",         perVisitor: 5,   global: 300,   windowMs: DAY },
+};
+const ADMIN_FAILS_PER_HOUR = 10;
+const VISITS_COUNTED_PER_DAY = 50000;
+
+async function clientId(request) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const day = new Date().toISOString().slice(0, 10);
+  return (await sha256Hex(`client:${day}:${ip}`)).slice(0, 32);
+}
+
+async function checkLimit(env, request, spec) {
+  const cid = await clientId(request);
+  const r = await store(env).hitAll([
+    { name: spec.name, subject: cid, max: spec.perVisitor, windowMs: spec.windowMs },
+    { name: spec.name, subject: "all", max: spec.global, windowMs: spec.windowMs },
+  ]);
+  if (r.ok) return null;
+  const when = spec.windowMs === HOUR ? "this hour" : "today";
+  console.log(`limit: ${spec.name} (${r.scope}) reached`);
+  return json({
+    ok: false,
+    code: "rate_limited",
+    error: r.scope === "global"
+      ? `The store's overall limit for this action has been reached ${when}. Try again later.`
+      : `You've reached this store's limit for this action ${when}. Try again later.`,
+  }, 429);
+}
+
+// Keeps visitor-supplied text short and free of control characters.
+function cleanText(value, max, { singleLine = false } = {}) {
+  if (typeof value !== "string") return "";
+  let t = value.replace(/[\u0000-\u0008\u000B-\u001F\u007F​-‏‪-‮⁦-⁩]/g, "");
+  if (singleLine) t = t.replace(/\s+/g, " ");
+  return t.trim().slice(0, max);
+}
+function cleanLabel(value, max) {
+  return cleanText(value, max, { singleLine: true }).replace(/[^A-Za-z0-9 ._:/()+@-]/g, "").trim();
+}
 
 function store(env) {
   return env.STORE.get(env.STORE.idFromName("main"));
@@ -99,10 +152,16 @@ function sessionHash(token) {
 // Returns the session's hash if the request carries a valid, unexpired session
 // (and refreshes its idle timer). Otherwise null.
 async function validSessionHash(request, env) {
+  return (await validSession(request, env))?.hash ?? null;
+}
+
+// Returns { hash, kind } for a valid session ("owner" or "visitor"), otherwise null.
+async function validSession(request, env) {
   const token = getCookie(request, SESSION_COOKIE);
   if (!token || token.length < 40 || token.length > 60) return null;
   const hash = await sessionHash(token);
-  return (await store(env).touchSession(hash)) ? hash : null;
+  const kind = await store(env).touchSession(hash);
+  return kind ? { hash, kind } : null;
 }
 
 // Browser API calls must come from our own page (defence in depth alongside SameSite=Strict).
@@ -133,9 +192,21 @@ async function handleAdmin(request, env, pathname) {
   if (typeof env.ADMIN_TOKEN !== "string" || env.ADMIN_TOKEN.length < 32) {
     return json({ ok: false, error: "Admin is not configured. Run `npm run setup`, then restart the server." }, 503);
   }
-  if (!(await isAdmin(request, env))) return json({ ok: false, error: "Unauthorized." }, 401);
-
   const s = store(env);
+  const cid = await clientId(request);
+  // Too many failed admin attempts from this visitor this hour: refuse without checking.
+  if ((await s.count("admin-fail-h", cid, HOUR)) >= ADMIN_FAILS_PER_HOUR) {
+    return json({ ok: false, error: "Too many attempts. Try again later." }, 429);
+  }
+  if (!(await isAdmin(request, env))) {
+    await s.hit("admin-fail-h", cid, ADMIN_FAILS_PER_HOUR + 1, HOUR);
+    console.log("admin: unauthorized attempt");
+    return json({ ok: false, error: "Unauthorized." }, 401);
+  }
+
+  if (pathname === "/admin/report" && request.method === "GET") {
+    return json({ ok: true, ...(await s.ownerReport({ feedbackLimit: 100 })) });
+  }
   if (pathname === "/admin/code" && request.method === "POST") {
     const body = await readJson(request);
     if (!body || typeof body.hash !== "string" || !/^[0-9a-f]{64}$/.test(body.hash)) {
@@ -164,13 +235,35 @@ async function handleAdmin(request, env, pathname) {
 }
 
 // ---- Session-protected tool endpoints ----
-// Every purchase-related endpoint goes through this: same-origin POST + valid session, checked on the server.
-async function withSession(request, env, url, handler) {
+// Every purchase-related endpoint goes through this: same-origin POST + valid session, checked on
+// the server. With { visitor: true } (endpoints that START a purchase), a visiting agent without a
+// session gets a new visitor session, within the visitor-session limits.
+async function withSession(request, env, url, handler, { visitor = false } = {}) {
   if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
   if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
-  const sh = await validSessionHash(request, env);
-  if (!sh) return json(NOT_AUTHENTICATED, 401);
-  return handler(sh);
+  let sh = await validSessionHash(request, env);
+  let newCookie = null;
+  if (!sh) {
+    if (await store(env).isKilled()) return json(CLOSED, 503);
+    if (!visitor) return json(NOT_AUTHENTICATED, 401);
+    const limited = await checkLimit(env, request, LIMITS.visitors);
+    if (limited) return limited;
+    const token = randomToken();
+    sh = await sessionHash(token);
+    if (!(await store(env).createVisitorSession(sh)).ok) return json(CLOSED, 503);
+    newCookie = sessionCookie(token);
+    await store(env).bump("visitor_sessions");
+  }
+  const res = await handler(sh);
+  if (newCookie) res.headers.append("Set-Cookie", newCookie);
+  return res;
+}
+
+// Public endpoints (no session needed): refused while the kill switch is on.
+async function publicGate(request, env, url) {
+  if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
+  if (await store(env).isKilled()) return json(CLOSED, 503);
+  return null;
 }
 
 function handleProduct() {
@@ -181,9 +274,83 @@ function handleProduct() {
       price: PRODUCT.priceLabel,
       description: `A PDF file containing exactly one sentence: "${PRODUCT.contents}"`,
       delivery: "After payment, a single-use download link that expires in minutes.",
-      note: "Payments run in Stripe test mode. No real money moves.",
+      note: "Payments run in Stripe test mode (sandbox). No real money moves, and any agent may try.",
     },
   });
+}
+
+function handleTestCard() {
+  return json({
+    ok: true,
+    card: {
+      number: "4242 4242 4242 4242",
+      expiry: "any future date, e.g. 12/34",
+      cvc: "any 3 digits, e.g. 123",
+      other_fields: "any name, email and postal code",
+    },
+    note: "Stripe's public test card. It only works in Stripe test mode (sandbox); no real money moves.",
+  });
+}
+
+async function handleTestToken(request, env) {
+  const limited = await checkLimit(env, request, LIMITS.testTokens);
+  if (limited) return limited;
+  let t;
+  try {
+    t = await createTestSharedPaymentToken(env);
+  } catch (err) {
+    if (err instanceof StripeError) return stripeFailure("get_test_payment_token", err);
+    throw err;
+  }
+  await store(env).bump("test_tokens_issued");
+  console.log("get_test_payment_token: issued"); // never log the token
+  return json({ ok: true, payment_token: t.token, limit: PRODUCT.priceLabel, expires_at: new Date(t.expiresAt).toISOString() });
+}
+
+async function handleHello(request, env) {
+  const body = await readJson(request);
+  const name = cleanLabel(body?.agent_name, 60);
+  const model = cleanLabel(body?.model, 80);
+  if (!name) return json({ ok: false, error: "agent_name is required (letters, numbers and basic punctuation, up to 60 characters)." }, 400);
+  const limited = await checkLimit(env, request, LIMITS.hellos);
+  if (limited) return limited;
+  const n = await store(env).recordHello(model ? `${name} | ${model}` : name);
+  console.log("say_hello: recorded");
+  return json({ ok: true, message: `Hello, ${name}. Recorded (this name has said hello ${n} time${n === 1 ? "" : "s"}).` });
+}
+
+async function handleStats(env) {
+  const st = await store(env).publicStats();
+  const tools = {};
+  for (const [k, v] of Object.entries(st)) if (k.startsWith("tool:")) tools[k.slice(5)] = v;
+  return json({
+    ok: true,
+    stats: {
+      page_visits: st.visits || 0,
+      visitor_sessions: st.visitor_sessions || 0,
+      test_tokens_issued: st.test_tokens_issued || 0,
+      test_purchases_completed: st.test_purchases || 0,
+      pdfs_downloaded: st.downloads || 0,
+      hellos: st.hellos || 0,
+      distinct_agent_names: st.distinct_agent_names || 0,
+      feedback_received: st.feedback || 0,
+      tool_calls: tools,
+    },
+    note: "All purchases are in Stripe test mode. Agent names and feedback are kept private.",
+  });
+}
+
+async function handleFeedback(request, env) {
+  const body = await readJson(request);
+  const text = cleanText(body?.feedback, 500);
+  const label = cleanLabel(body?.agent_name, 60) || "(unnamed)";
+  if (text.length < 3) return json({ ok: false, error: "feedback is required (3 to 500 characters)." }, 400);
+  const limited = await checkLimit(env, request, LIMITS.feedback);
+  if (limited) return limited;
+  const r = await store(env).addFeedback({ label, text });
+  if (!r.ok) return json({ ok: false, error: "The feedback box is full for now. Thank you anyway." }, 507);
+  console.log("leave_feedback: recorded"); // never log the text
+  return json({ ok: true, message: "Thank you. Your feedback was recorded privately for the store owner." });
 }
 
 function stripeFailure(where, err) {
@@ -192,7 +359,7 @@ function stripeFailure(where, err) {
   return json({ ok: false, error: "The payment provider (Stripe) returned an error. Try again shortly; if it keeps failing, tell the store owner." }, 502);
 }
 
-async function handleCreateCheckout(env, url, sh) {
+async function handleCreateCheckout(request, env, url, sh) {
   const s = store(env);
   const prep = await s.prepareCheckout(sh);
   if (prep.existing) {
@@ -201,6 +368,8 @@ async function handleCreateCheckout(env, url, sh) {
     return json({ ok: true, reused: true, order_id: o.orderId, checkout_url: o.url, expires_at: new Date(o.checkoutExpiresAt).toISOString() });
   }
   if (!prep.allowed) return json({ ok: false, error: prep.error }, 429);
+  const limited = await checkLimit(env, request, LIMITS.checkouts);
+  if (limited) return limited;
 
   const orderId = randomOrderId();
   let session;
@@ -291,8 +460,10 @@ async function handlePayWithToken(request, env, sh) {
   const body = await readJson(request);
   const token = body && typeof body.payment_token === "string" ? body.payment_token.trim() : "";
   if (!isSharedPaymentToken(token)) {
-    return json({ ok: false, error: "payment_token is missing or not a Shared Payment Token (it should start with spt_)." }, 400);
+    return json({ ok: false, error: "payment_token is missing or not a Shared Payment Token (it should start with spt_). Visitors can get a sandbox one from get_test_payment_token." }, 400);
   }
+  const limited = await checkLimit(env, request, LIMITS.payments);
+  if (limited) return limited;
   const s = store(env);
   const orderId = randomOrderId();
   const reserved = await s.reserveTokenOrder(sh, orderId);
@@ -394,6 +565,15 @@ async function handleSignIn(request, env, url) {
   );
 }
 
+// Which tool each API path serves (for the public per-tool counters).
+const API_TOOL_NAMES = {
+  "/api/sign-in": "sign_in", "/api/product": "get_product", "/api/test-card": "get_test_card",
+  "/api/test-token": "get_test_payment_token", "/api/pay-with-token": "pay_with_token",
+  "/api/checkout": "create_checkout", "/api/open-checkout": "open_checkout", "/api/order": "check_order",
+  "/api/download": "get_download", "/api/hello": "say_hello", "/api/stats": "get_stats",
+  "/api/feedback": "leave_feedback", "/api/sign-out": "sign_out",
+};
+
 export default {
   async fetch(request, env) {
     // Hard rule 1: never run with anything but a Stripe TEST key.
@@ -407,7 +587,18 @@ export default {
     const method = request.method;
 
     if (pathname === "/" && (method === "GET" || method === "HEAD")) {
+      if (method === "GET" && (await store(env).hit("visits-count", "all", VISITS_COUNTED_PER_DAY, DAY))) {
+        await store(env).bump("visits");
+      }
       return respond(PAGE_HTML, "text/html; charset=utf-8");
+    }
+
+    // Every API call counts against a per-visitor and global hourly budget, and per-tool counters.
+    if (pathname.startsWith("/api/")) {
+      const limited = await checkLimit(env, request, LIMITS.api);
+      if (limited) return limited;
+      const tool = API_TOOL_NAMES[pathname];
+      if (tool) await store(env).bump(`tool:${tool}`);
     }
 
     if (pathname === "/app.js" && (method === "GET" || method === "HEAD")) {
@@ -420,13 +611,27 @@ export default {
 
     // Lets the page find out whether it is signed in (e.g. after a reload).
     if (pathname === "/api/session" && method === "GET") {
-      const signedIn = !!(await validSessionHash(request, env));
-      return signedIn ? json({ ok: true, signedIn: true }) : json({ ...NOT_AUTHENTICATED, signedIn: false }, 401);
+      const sess = await validSession(request, env);
+      return sess
+        ? json({ ok: true, signedIn: sess.kind === "owner", kind: sess.kind })
+        : json({ ...NOT_AUTHENTICATED, signedIn: false }, 401);
     }
 
-    if (pathname === "/api/product") return withSession(request, env, url, () => handleProduct());
-    if (pathname === "/api/checkout") return withSession(request, env, url, (sh) => handleCreateCheckout(env, url, sh));
-    if (pathname === "/api/pay-with-token") return withSession(request, env, url, (sh) => handlePayWithToken(request, env, sh));
+    // Public tools (no session).
+    if (method === "POST" && ["/api/product", "/api/test-card", "/api/hello", "/api/stats", "/api/feedback"].includes(pathname)) {
+      const gated = await publicGate(request, env, url);
+      if (gated) return gated;
+      if (pathname === "/api/product") return handleProduct();
+      if (pathname === "/api/test-card") return handleTestCard();
+      if (pathname === "/api/hello") return handleHello(request, env);
+      if (pathname === "/api/stats") return handleStats(env);
+      if (pathname === "/api/feedback") return handleFeedback(request, env);
+    }
+
+    // Purchase tools. Those that START a purchase may create a visitor session.
+    if (pathname === "/api/test-token") return withSession(request, env, url, () => handleTestToken(request, env), { visitor: true });
+    if (pathname === "/api/checkout") return withSession(request, env, url, (sh) => handleCreateCheckout(request, env, url, sh), { visitor: true });
+    if (pathname === "/api/pay-with-token") return withSession(request, env, url, (sh) => handlePayWithToken(request, env, sh), { visitor: true });
     if (pathname === "/api/open-checkout") return withSession(request, env, url, (sh) => handleOpenCheckout(request, env, sh));
     if (pathname === "/api/order") return withSession(request, env, url, (sh) => handleCheckOrder(request, env, sh));
     if (pathname === "/api/download") return withSession(request, env, url, (sh) => handleGetDownload(request, env, url, sh));
