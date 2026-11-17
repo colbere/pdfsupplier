@@ -45,3 +45,27 @@
 ## Status
 
 Counts as Step 3's first outside-agent run (and the Phase 1 "optional control", Q6). Result: **no purchase**, because the agent can't see WebMCP tools. The site and the trial token are fine.
+
+---
+
+# Run 2: Claude (claude.ai chat), then Claude in Chrome (same day, later)
+
+- **Agent:** Claude in the claude.ai chat. It first read the page with its web-reading tool; then, asked to "open it in Chrome", it loaded Claude in Chrome and opened the live page in the owner's Chrome 157 (no flag).
+- **Prompt:** "Go to pdfsupplier.com and tell me what you find", then "Yes, do that". This was not a purchase request.
+- **Outcome:** it described the page accurately. **It saw no tools.**
+
+## What it did
+1. **Page text only:** it summarised the page correctly (the experiment, the $1 PDF, Stripe test mode, no buttons or forms, say hello, feedback, stats). It said it couldn't see WebMCP tools without a live browser.
+2. **In Chrome:** checked tabs, opened the site, read the text, ran page script and read the console. It reported:
+   - "`navigator.modelContext`, the WebMCP API, is undefined in this Chrome … so the site's tools never registered. This is probably a feature-flag or version issue on my side."
+   - The console showed only "the Claude extension's 'WebMCP content script injected' message".
+   - It couldn't read `/app.js`: "Reading it through the page was blocked, and fetching it directly isn't allowed in this session."
+3. Suggested turning on Chrome's WebMCP flag, or pasting `app.js` into the chat. Closed its tab.
+
+## Checked afterwards
+- **Same wrong diagnosis as run 1:** it looked for `navigator.modelContext`. The page uses `document.modelContext`, which is present in this Chrome with all 12 tools (probe earlier the same day). No flag is needed.
+- **It misread the console clue:** "[WebMCP] Content script injected in …" is logged by **Google's WebMCP example extension** (`c:\claude\webmcp-extension\extension\content.ts` line 11), which is also installed in this Chrome. It isn't a Claude in Chrome message.
+- Unlike run 1, it couldn't read `app.js`, so it didn't know the tool names either.
+
+## Takeaway
+Two runs, same failure: Claude in Chrome probes the wrong name (`navigator.modelContext`), finds nothing, and blames the browser. A one-line hint in the page text naming `document.modelContext` would likely have redirected both runs (Q19). It still couldn't *call* the tools natively, but it can run page script, so `document.modelContext.executeTool(...)` might be within reach.
