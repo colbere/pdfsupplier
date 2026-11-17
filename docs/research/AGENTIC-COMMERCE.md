@@ -74,3 +74,16 @@ Not now: implementing ACP or UCP checkout APIs, and live Link wallets. Revisit t
   - Stripe: docs.stripe.com/agentic-commerce; /agentic-commerce/concepts/shared-payment-tokens (seller and agent variants); /agentic-commerce/sellers/use-cases/retail (+ /checkout, /ucp); /agents; /agents/how-it-works; /agentic-commerce/agents/embedded; /agentic-commerce/agents/webmcp; /agentic-commerce/agents/link-agent-wallet (+ /use-link-wallet-pay-online); /agentic-commerce/protocol (now titled UCP).
   - ACP: agenticcommerce.dev (+ /docs, /docs/concepts/security); github.com/agentic-commerce-protocol/agentic-commerce-protocol (spec 2026-04-17 OpenAPI files, changelog).
 - **Not read:** ucp.dev; developers.openai.com/commerce; Google AP2 and card-network agent programs (worth a look before going public).
+
+---
+
+## Re-check, 2026-11-16 (before building)
+The docs were re-read (none shows a last-updated date). Two fetched pages carried unrelated injected text; it was ignored and treated as data.
+- **Shared Payment Tokens:** unchanged from the first reading.
+  - Charge: `POST /v1/payment_intents` + `payment_method_data[shared_payment_granted_token]`, `Stripe-Version: 2026-09-30.preview`.
+  - Test helper: `POST /v1/test_helpers/shared_payment/granted_tokens` ("generate an SPT without an agent").
+  - New details seen: a seller finds its **profile ID** at dashboard.stripe.com/profiles (agents target it with `seller_details[network_business_profile]`); `requires_action` (3D Secure) handling; recurring tokens.
+  - **Still not stated:** which restricted-key permissions are needed, and whether a prior seller–agent relationship is required.
+- **Stripe WebMCP page:** still lists hosted Checkout, the embedded form, Elements and the hosted invoice page. Still no tool names, and nothing for merchants. Adds "Discover the toolset again after an action that can change the payment form".
+- **Link Agent Wallet:** the agent gets a **virtual card** (typed into a normal card form), a **shared payment token** (for sellers whose API accepts SPTs; needs the seller's network ID), or a **Link Pay Token** (needs a hidden `.AiAgentPaymentSteering` block with `input[name="link_pay_token"]` in the seller's checkout). The person approves each request in Link within 30 minutes. `--test` returns test credentials. US and Canada customers. No Stripe account needed for the agent.
+- **UCP** (ucp.dev): an open REST and JSON-RPC commerce standard with MCP, A2A and AP2 support, co-developed by Google, Shopify, Stripe and others. Not WebMCP. Its relationship to ACP is not stated.

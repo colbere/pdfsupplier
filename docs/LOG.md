@@ -751,3 +751,5 @@ Record: `docs/test-runs/agent/2026-11-14T01-15-21-context-none.md`.
 - **Owner decision (D27):** "remain free and in Stripe's sandbox mode". No real business, no real charge, no paid services. `PLAN.md` updated: the brief's real $1 charge and paid domain are dropped; the test-mode guards are permanent.
 
 - **2026-11-16:** the owner clarified that **a domain is the one allowed cost**; no legal work or business formation (D27a). Approved starting the Shared Payment Token prototype (plan step 4).
+
+- **2026-11-16:** the owner asked for a refresher and an options review before the Dashboard step. Docs re-checked; summary appended to `docs/research/AGENTIC-COMMERCE.md`.
