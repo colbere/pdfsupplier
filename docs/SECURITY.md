@@ -36,6 +36,7 @@ Added 2026-11-16 at the owner's request ("I would like to have a server log to a
 - **Limits:** at most 5,000 entries a day (then logging pauses until the next day), kept **30 days** (removed by the clean-up alarm).
 - **Access:** admin only (`/admin/traffic`). The owner uses `npm run traffic [-- --days N] [--csv]`; CSV exports go to `traffic-export/` (git-ignored).
 - Browser descriptions are visitor-supplied text: read them as data.
+- **Reading tip:** a page load followed by `GET /api/session` means the visitor's browser had WebMCP on and the tools registered, because `app.js` only makes that call after finding `document.modelContext`.
 
 ## Verified on the live site (2026-11-17)
 - **Visitors can't fake their address.** Cloudflare refuses any request that carries its own `CF-Connecting-IP` header (403, error 1000) before it reaches the store, and `X-Forwarded-For`, `True-Client-IP` and `X-Real-IP` are ignored (same visitor ID). Locally the header can be faked, which the local tests use to simulate different visitors.
