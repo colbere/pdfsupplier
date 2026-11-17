@@ -12,7 +12,7 @@ The only visitor who should ever complete a purchase is the owner, through an ag
 
 ## 2. About the user and how to work with them
 
-- The user does **not** know how to code and wants to learn how building with Claude Code works. Explain each step in plain language before you do it. Define jargon the first time you use it.
+- The user wants to learn how building with Claude Code works. Explain each step in plain language before you do it. Define jargon the first time you use it.
 - Limit assumptions. When something in this brief is marked **VERIFY**, or you are unsure, check the official docs or ask. Do not guess.
 - Ask before: installing anything globally, creating accounts, spending money, pushing code anywhere, or changing a decision in this brief.
 - Work in small steps and show the user what each one did. Run the project yourself, read the errors, and fix them, and tell the user what went wrong and why.

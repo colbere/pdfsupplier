@@ -911,3 +911,4 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 - **A1, license:** owner chose **MIT**, copyright "colbere" (D33). Added `LICENSE`, a License section in the README, and `"license": "MIT"` in `package.json`. The extension patch stays Apache-2.0.
 - **A3, commit identity:** history rewritten and force-pushed (D34): every commit is now "colbere" with the GitHub no-reply address and UTC times; older doc versions scrubbed of the owner's phone, network and time-zone details. Backup mirror kept locally. 14 commit IDs in the docs updated to the new IDs.
 
+- **A6, BRIEF.md:** the owner asked to remove the line saying they don't code ("most people who do this don't code"). The brief keeps its working instruction (explain each step in plain language). It was the only such statement in the repo.
