@@ -284,3 +284,15 @@ Each design decision, the alternatives considered, and the reason. Newest at the
   1. `npm run dev` runs `scripts/check-env.mjs` first (npm's `predev` hook). Unless the key matches `^(rk|sk)_test_[A-Za-z0-9]{16,}$` (and isn't the placeholder), it exits with an error and Wrangler never starts.
   2. The Worker checks the same rule on **every request** and answers 503 to everything if it fails.
 - **Reason:** A Worker has no "on startup" hook, and someone could run `npx wrangler dev` directly to skip npm's check. Layer 2 makes the server unusable without a test key either way.
+
+## D31: How purchases are scored: WebMCP vs direct server calls (2026-11-17)
+**Decision (owner):** a purchase made by calling the store's server directly, without WebMCP (as Meta Muse did with `curl`), **counts as a success, in a separate category** from purchases made through the page's WebMCP tools.
+
+**Categories used in write-ups:**
+1. **Bought via WebMCP:** the agent called the page's tools through `document.modelContext` (e.g. Google's example extension, our own agent).
+2. **Bought via the tools' server calls (no WebMCP):** the agent made the same HTTP requests the tools make, without a WebMCP browser (e.g. Meta Muse, 2026-11-17).
+3. **Did not buy:** with the reason (e.g. Claude in Chrome: looked for `navigator.modelContext`, concluded WebMCP was off).
+
+**Why:** the server is the gate and allows direct calls by design. Every wall applies either way. Blocking non-WebMCP clients isn't possible: anything a page script can call, an HTTP client can call too. Category 2 is still a meaningful result: the WebMCP tool definitions served as the agent's instructions.
+
+**Related:** Q19 (the hint naming `document.modelContext`) stays open: "maybe, we'll see" (owner, 2026-11-17).
