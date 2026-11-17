@@ -58,7 +58,8 @@ const CLOSED = { ok: false, code: "closed", error: "The store is temporarily clo
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const LIMITS = {
-  api:        { name: "api-h",            perVisitor: 300, global: 20000, windowMs: HOUR },
+  // Global API budget sized to the Cloudflare free plan's storage allowance (docs/research/GO-LIVE.md).
+  api:        { name: "api-h",            perVisitor: 300, global: 1500,  windowMs: HOUR },
   visitors:   { name: "visitor-sessions", perVisitor: 20,  global: 5000,  windowMs: DAY },
   checkouts:  { name: "checkouts",        perVisitor: 5,   global: 300,   windowMs: DAY },
   testTokens: { name: "test-tokens",      perVisitor: 5,   global: 300,   windowMs: DAY },
@@ -69,7 +70,12 @@ const LIMITS = {
 const ADMIN_FAILS_PER_HOUR = 5; // owner's choice (2026-11-16)
 const VISITS_COUNTED_PER_DAY = 50000;
 
+// Per-request context set by the gate (one storage call per request; see route()).
+const RC = new WeakMap();
+
 async function clientId(request) {
+  const cached = RC.get(request)?.cid;
+  if (cached) return cached;
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const day = new Date().toISOString().slice(0, 10);
   return (await sha256Hex(`client:${day}:${ip}`)).slice(0, 32);
@@ -156,7 +162,10 @@ async function validSessionHash(request, env) {
 }
 
 // Returns { hash, kind } for a valid session ("owner" or "visitor"), otherwise null.
+// Uses the gate's answer when this request went through it (no extra storage call).
 async function validSession(request, env) {
+  const rc = RC.get(request);
+  if (rc && rc.gated) return rc.session ? { hash: rc.sessionHash, kind: rc.session } : null;
   const token = getCookie(request, SESSION_COOKIE);
   if (!token || token.length < 40 || token.length > 60) return null;
   const hash = await sessionHash(token);
@@ -250,7 +259,7 @@ async function withSession(request, env, url, handler, { visitor = false } = {})
   let sh = await validSessionHash(request, env);
   let newCookie = null;
   if (!sh) {
-    if (await store(env).isKilled()) return json(CLOSED, 503);
+    if (await isClosed(request, env)) return json(CLOSED, 503);
     if (!visitor) return json(NOT_AUTHENTICATED, 401);
     const limited = await checkLimit(env, request, LIMITS.visitors);
     if (limited) return limited;
@@ -268,8 +277,15 @@ async function withSession(request, env, url, handler, { visitor = false } = {})
 // Public endpoints (no session needed): refused while the kill switch is on.
 async function publicGate(request, env, url) {
   if (!sameOrigin(request, url)) return json({ ok: false, error: "Cross-origin request refused." }, 403);
-  if (await store(env).isKilled()) return json(CLOSED, 503);
+  if (await isClosed(request, env)) return json(CLOSED, 503);
   return null;
+}
+
+// Kill switch state: from the gate when available, otherwise one read.
+async function isClosed(request, env) {
+  const rc = RC.get(request);
+  if (rc && rc.gated) return rc.killed;
+  return store(env).isKilled();
 }
 
 function handleProduct() {
@@ -608,7 +624,8 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const response = await route(request, env);
-    if (ctx && typeof ctx.waitUntil === "function" && isTestKey(env.STRIPE_SECRET_KEY)) {
+    const rc = RC.get(request);
+    if (ctx && typeof ctx.waitUntil === "function" && isTestKey(env.STRIPE_SECRET_KEY) && rc?.log !== false) {
       ctx.waitUntil(logTraffic(request, env, url, response.status));
     }
     return response;
@@ -627,19 +644,35 @@ async function route(request, env) {
     const { pathname } = url;
     const method = request.method;
 
-    if (pathname === "/" && (method === "GET" || method === "HEAD")) {
-      if (method === "GET" && (await store(env).hit("visits-count", "all", VISITS_COUNTED_PER_DAY, DAY))) {
-        await store(env).bump("visits");
+    // ---- The gate: ONE storage call for the page, every API call and downloads ----
+    const isPage = pathname === "/" && method === "GET";
+    if (isPage || pathname.startsWith("/api/") || pathname.startsWith("/download/")) {
+      const cid = await clientId(request);
+      const token = isPage ? null : getCookie(request, SESSION_COOKIE);
+      const sessionHashValue = token && token.length >= 40 && token.length <= 60 ? await sessionHash(token) : null;
+      const g = await store(env).gate({
+        cid,
+        tool: API_TOOL_NAMES[pathname] || null,
+        isPage,
+        sessionHash: sessionHashValue,
+        api: pathname.startsWith("/api/") ? { perVisitor: LIMITS.api.perVisitor, global: LIMITS.api.global } : null,
+        visitsCap: VISITS_COUNTED_PER_DAY,
+      });
+      RC.set(request, { gated: true, cid, sessionHash: sessionHashValue, ...g });
+      if (g.limited) {
+        console.log(`limit: api-h (${g.limited === "global" ? "global" : "visitor"}) reached`);
+        return json({
+          ok: false,
+          code: "rate_limited",
+          error: g.limited === "global"
+            ? "The store's overall limit for this action has been reached this hour. Try again later."
+            : "You've reached this store's limit for this action this hour. Try again later.",
+        }, 429);
       }
-      return respond(PAGE_HTML, "text/html; charset=utf-8");
     }
 
-    // Every API call counts against a per-visitor and global hourly budget, and per-tool counters.
-    if (pathname.startsWith("/api/")) {
-      const limited = await checkLimit(env, request, LIMITS.api);
-      if (limited) return limited;
-      const tool = API_TOOL_NAMES[pathname];
-      if (tool) await store(env).bump(`tool:${tool}`);
+    if (pathname === "/" && (method === "GET" || method === "HEAD")) {
+      return respond(PAGE_HTML, "text/html; charset=utf-8");
     }
 
     if (pathname === "/app.js" && (method === "GET" || method === "HEAD")) {

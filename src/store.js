@@ -75,8 +75,12 @@ export class Store extends DurableObject {
     const s = this.ctx.storage;
     const keys = [
       ...(await s.list({ prefix: "fails:" })).keys(),
-      ...[...(await s.list({ prefix: "rl:" })).keys()].filter((k) => !k.startsWith("rl:visits-count:")),
+      ...(await s.list({ prefix: "rl:" })).keys(),
+      ...(await s.list({ prefix: "v:" })).keys(),
     ];
+    // Also reset the shared hourly API counter (keeps the all-time totals).
+    const g = await s.get("g");
+    if (g) await s.put("g", { ...g, apiHour: 0 });
     for (let i = 0; i < keys.length; i += 128) await s.delete(keys.slice(i, i + 128));
     return { ok: true, cleared: keys.length };
   }
@@ -163,6 +167,66 @@ export class Store extends DurableObject {
     return !!(await this.ctx.storage.get("killSwitch"));
   }
 
+  // ---- The per-request gate (capacity fix, docs/research/GO-LIVE.md) ----
+  // ONE storage call per request: kill switch, session check, hourly API budget (per visitor and
+  // global), and the visit/tool counters. Writes: the visitor's hourly counter + one shared "g"
+  // record (+ the session's lastSeen at most once a minute). A visitor already over the limit
+  // costs no writes at all.
+  async gate({ cid, tool, isPage, sessionHash, api, visitsCap }) {
+    const s = this.ctx.storage;
+    const now = Date.now();
+    const day = Math.floor(now / 86_400_000);
+    const hour = Math.floor(now / 3_600_000);
+    const vKey = `v:${cid}:${day}`;
+    const sKey = sessionHash ? `session:${sessionHash}` : null;
+    const got = await s.get(["killSwitch", "g", vKey, ...(sKey ? [sKey] : [])]);
+    const killed = !!got.get("killSwitch");
+
+    const g = got.get("g") || { day, hour, apiHour: 0, visitsDay: 0, totals: {} };
+    if (g.day !== day) { g.day = day; g.visitsDay = 0; }
+    if (g.hour !== hour) { g.hour = hour; g.apiHour = 0; }
+    const v = got.get(vKey) || { hour, apiHour: 0, noted: false };
+    if (v.hour !== hour) { v.hour = hour; v.apiHour = 0; v.noted = false; }
+
+    // Session (unless the store is closed): refresh lastSeen at most once a minute.
+    let session = null;
+    let sessionUpdate = null;
+    let sessionExpired = false;
+    const rec = sKey ? got.get(sKey) : null;
+    if (rec && !killed) {
+      if (now - rec.lastSeen > SESSION_IDLE_MS) sessionExpired = true;
+      else {
+        session = rec.kind || "owner";
+        if (now - rec.lastSeen > 60_000) sessionUpdate = { ...rec, lastSeen: now };
+      }
+    }
+
+    const updates = {};
+    let limited = null;
+    let log = true;
+    if (!isPage && api) {
+      if (v.apiHour >= api.perVisitor) limited = "visitor";
+      else if (g.apiHour >= api.global) limited = "global";
+    }
+    if (limited) {
+      // Log only the first refusal per visitor per hour, so a flood can't fill the log.
+      if (!v.noted) { v.noted = true; updates[vKey] = v; } else log = false;
+    } else {
+      if (isPage) {
+        if (g.visitsDay < visitsCap) { g.visitsDay++; g.totals.visits = (g.totals.visits || 0) + 1; updates.g = g; }
+      } else {
+        v.apiHour++; g.apiHour++;
+        if (tool) g.totals[`tool:${tool}`] = (g.totals[`tool:${tool}`] || 0) + 1;
+        updates[vKey] = v;
+        updates.g = g;
+      }
+      if (sessionUpdate) updates[sKey] = sessionUpdate;
+    }
+    if (Object.keys(updates).length) await s.put(updates);
+    if (sessionExpired) await s.delete(sKey);
+    return { killed, limited, session, log };
+  }
+
   // ---- Rate limits (fixed windows) ----
 
   // Counts one event for `subject` under `name`; returns false (and doesn't count) if the
@@ -209,6 +273,8 @@ export class Store extends DurableObject {
     const s = this.ctx.storage;
     const out = {};
     for (const [k, v] of await s.list({ prefix: "stat:" })) out[k.slice(5)] = v;
+    // Visits and tool counts now live in the gate's shared record.
+    for (const [k, v] of Object.entries((await s.get("g"))?.totals || {})) out[k] = (out[k] || 0) + v;
     out.distinct_agent_names = (await s.list({ prefix: "hello:" })).size;
     return out;
   }
@@ -235,11 +301,15 @@ export class Store extends DurableObject {
   // ---- Traffic log (owner-only; no raw IPs; see docs/SECURITY.md) ----
 
   async logTraffic(entry) {
-    // Caps protect storage under a flood: logging simply stops for the rest of the day.
-    if (!(await this.hit("log-cap", "all", TRAFFIC_LOG_PER_DAY, 86_400_000))) return;
+    // Daily cap protects storage under a flood. Counted in memory (no extra write per entry); if
+    // the object restarts the count restarts, which only makes the cap approximate.
+    const day = Math.floor(Date.now() / 86_400_000);
+    if (this.logDay !== day) { this.logDay = day; this.logCount = 0; }
+    if (this.logCount >= TRAFFIC_LOG_PER_DAY) return;
+    this.logCount++;
     const key = `log:${String(Date.now()).padStart(15, "0")}:${crypto.randomUUID().slice(0, 6)}`;
     await this.ctx.storage.put(key, entry);
-    await this.#ensureCleanup();
+    if (!this.alarmChecked) { this.alarmChecked = true; await this.#ensureCleanup(); }
   }
 
   async readTraffic({ startAfter, limit = 2000 } = {}) {
@@ -280,6 +350,9 @@ export class Store extends DurableObject {
       if (!Number.isFinite(bucket) || (bucket + 1) * windowMs < now - RL_KEEP_MS) doomed.push(k);
     }
     for (const [k, v] of await s.list({ prefix: "session:" })) if (now - v.lastSeen > SESSION_IDLE_MS) doomed.push(k);
+    // Per-visitor gate counters: v:<cid>:<day>, kept until the day after.
+    const today = Math.floor(now / 86_400_000);
+    for (const [k] of await s.list({ prefix: "v:" })) if (Number(k.split(":")[2]) < today - 1) doomed.push(k);
     for (const [k, v] of await s.list({ prefix: "dl:" })) if (v.expiresAt <= now) doomed.push(k);
     // Traffic log: keys are log:<15-digit ms>:<rand>, so old entries come first.
     for (const [k] of await s.list({ prefix: "log:", end: `log:${String(now - TRAFFIC_KEEP_MS).padStart(15, "0")}` })) doomed.push(k);
