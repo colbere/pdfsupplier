@@ -917,4 +917,5 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 ## 2026-11-18: Review round 2
 - **Item 1, old history still on GitHub:** a second outside review found the pre-rewrite commits could still be fetched by ID (confirmed). The owner deleted and recreated the repo, and the clean history was pushed. The old IDs are now unfetchable, and a fresh clone is clean and turns the guard on (D34 follow-up).
 - **Item 4:** D34 no longer gives the local backup's path.
+- **Items 2 and 3, README:** claims tightened to the evidence, plus identity, "what was changed", logging (README only) and "how it was built" sections (D35). Owner choices: logging section in the README only; "Designed and directed by colbere, and built with Claude Code."
 
