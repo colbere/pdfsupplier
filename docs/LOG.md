@@ -913,3 +913,8 @@ The owner reported signing up for Cloudflare and buying the domain (assumed **pd
 
 - **A6, BRIEF.md:** the owner asked to remove the line saying they don't code ("most people who do this don't code"). Then also removed "The user wants to learn how building with Claude Code works" (owner: it shouldn't read as a first project). The brief keeps its working instruction (explain each step in plain language). B1 and B6 (homepage sentences): owner decided not to do them.
 - **A4, README refreshed:** live link and invitation, an experimental notice (Chrome 157, November 2026), a results table using the D31 categories, how it works (12 tools, two routes, the server as the gate), known limits, visiting with an agent (Chrome 149 to 162, trial ends 30 Mar 2027), updated local setup, owner commands with `--live`, and all tests. Owner choices: keep the traffic-log description of `npm run traffic`; no "deploy your own copy" section; state the known limits publicly.
+
+## 2026-11-18: Review round 2
+- **Item 1, old history still on GitHub:** a second outside review found the pre-rewrite commits could still be fetched by ID (confirmed). The owner deleted and recreated the repo, and the clean history was pushed. The old IDs are now unfetchable, and a fresh clone is clean and turns the guard on (D34 follow-up).
+- **Item 4:** D34 no longer gives the local backup's path.
+
